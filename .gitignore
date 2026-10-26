@@ -1,0 +1,14 @@
+.venv/
+**/node_modules/
+**/target/
+**/dist/
+**/coverage/
+**/.angular/
+**/.env
+**/.env.*
+!**/.env.example
+backup-mujer-magica-*.json
+mujer-magica-backup-*.json
+*.log
+Thumbs.db
+.DS_Store

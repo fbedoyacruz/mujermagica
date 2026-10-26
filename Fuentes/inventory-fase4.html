@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventario Mujer Magica - Fase 4 | Alertas, Reordenes, Movimientos</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --brand-primary: #f97316; --brand-secondary: #14b8a6; }
+    body { font-family: "Manrope", sans-serif; }
+    h1, h2, h3, h4, h5, h6 { font-family: "Sora", sans-serif; }
+    .app-bg { background: radial-gradient(circle at 12% 10%, rgba(249, 115, 22, 0.16), transparent 28%), radial-gradient(circle at 88% 20%, rgba(20, 184, 166, 0.16), transparent 34%), linear-gradient(145deg, #fff7ed, #ecfeff 50%, #eff6ff); }
+    .panel-glass { backdrop-filter: blur(18px); background: linear-gradient(165deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.66)); box-shadow: 0 18px 44px -18px rgba(15, 23, 42, 0.28); }
+    .brand-gradient { background: linear-gradient(135deg, #ea580c, #f59e0b 50%, #0f766e 100%); }
+    .nav-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border-radius: 14px; color: #334155; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 180ms ease; border: 1px solid transparent; }
+    .nav-link:hover { background: rgba(255, 255, 255, 0.85); }
+    .nav-link.active { background: rgba(15, 23, 42, 0.92); color: #fff; }
+    .kpi-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.84); padding: 18px; }
+    .view-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.86); padding: 18px; }
+    .stock-badge { border-radius: 999px; padding: 6px 12px; font-size: 11px; font-weight: 700; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 40; }
+    .modal-backdrop.active { display: flex; align-items: center; justify-content: center; }
+    .modal-content { background: white; border-radius: 20px; padding: 24px; max-width: 600px; width: 90%; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); max-height: 90vh; overflow-y-auto; }
+    .toast-item { border-radius: 14px; color: #fff; font-size: 13px; padding: 10px 14px; animation: slide-up 220ms ease; }
+    @keyframes slide-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .alert-badge { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+    .status-card { border-radius: 16px; border-left: 4px solid; padding: 12px; }
+    .status-optimal { border-left-color: #10b981; background: #ecfdf5; }
+    .status-warning { border-left-color: #f59e0b; background: #fffbeb; }
+    .status-critical { border-left-color: #ef4444; background: #fef2f2; }
+  </style>
+</head>
+<body class="app-bg text-slate-800">
+  <div class="min-h-screen p-4 md:p-6">
+    <div class="mx-auto grid max-w-[1440px] grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
+      <!-- SIDEBAR -->
+      <aside class="panel-glass rounded-3xl border border-white/60 h-fit">
+        <div class="brand-gradient px-6 py-7 text-white">
+          <p class="text-xs uppercase tracking-[0.2em] text-white/80">Mujer Magica</p>
+          <h1 class="text-2xl font-bold">Inventario Fase 4</h1>
+          <p class="mt-2 text-sm text-white/90">Alertas + Reordenes + Movimientos</p>
+        </div>
+        <nav id="sidebarNav" class="space-y-2 px-4 py-4"></nav>
+        <div class="px-4 pb-5 pt-3">
+          <button id="alertBtn" class="w-full rounded-2xl bg-red-600 text-white px-4 py-3 text-sm font-semibold flex items-center justify-center gap-2">⚠️ Alertas <span class="alert-count">0</span></button>
+          <div class="rounded-2xl bg-slate-900 text-white px-4 py-2 mt-2 text-xs text-center">
+            <p id="liveClock">--:--:--</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- MAIN -->
+      <main class="space-y-4">
+        <header class="panel-glass rounded-3xl border border-white/60 p-4 md:p-5">
+          <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div><h2 id="viewTitle" class="text-2xl font-bold">Gestión de Inventario</h2></div>
+            <input id="globalSearch" class="rounded-xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm md:w-72" placeholder="Buscar productos..." />
+          </div>
+        </header>
+        <section id="appView" class="space-y-4"></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toastHost" class="pointer-events-none fixed bottom-5 right-5 z-50 space-y-2"></div>
+  <div id="modalBackdrop" class="modal-backdrop"><div id="modalContent"></div></div>
+
+  <script>
+    // ==================== UTILIDADES ====================
+    const formatCurrency = (v) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v || 0);
+    const formatDate = (d) => { const date = new Date(d); return Number.isNaN(date.getTime()) ? "--" : new Intl.DateTimeFormat("es-CO", { year: "numeric", month: "short", day: "2-digit" }).format(date); };
+    const uid = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 10)}`;
+    const showToast = (m, t = "info") => { const h = document.getElementById("toastHost"); if (!h) return; const p = { info: "bg-slate-900", success: "bg-emerald-700", warning: "bg-amber-700", danger: "bg-red-700" }; const e = document.createElement("div"); e.className = `toast-item ${p[t] || p.info}`; e.textContent = m; h.appendChild(e); setTimeout(() => e.remove(), 2600); };
+
+    // ==================== BASE DE DATOS ====================
+    const today = new Date().toISOString();
+    const products = [
+      { id: "prod_001", nombre: "Shampoo Kativa", categoria: "Capilar", marca: "Kativa", precioVentaDetal: 29000, precioCompra: 14500, stockActual: 24, stockMinimo: 10, proveedor: "prov_001", imagen: "https://picsum.photos/seed/Shampoo/200/200" },
+      { id: "prod_002", nombre: "Acondicionador Wella", categoria: "Capilar", marca: "Wella", precioVentaDetal: 28000, precioCompra: 14000, stockActual: 20, stockMinimo: 8, proveedor: "prov_002", imagen: "https://picsum.photos/seed/Acondicionador/200/200" },
+      { id: "prod_003", nombre: "Mantequilla Capilar", categoria: "Capilar", marca: "Milagros", precioVentaDetal: 36000, precioCompra: 18000, stockActual: 3, stockMinimo: 12, proveedor: "prov_001", imagen: "https://picsum.photos/seed/Mantequilla/200/200" },
+      { id: "prod_004", nombre: "Sombras Premium", categoria: "Maquillaje", marca: "Loreal", precioVentaDetal: 39000, precioCompra: 19500, stockActual: 11, stockMinimo: 5, proveedor: "prov_002", imagen: "https://picsum.photos/seed/Sombras/200/200" },
+      { id: "prod_005", nombre: "Brillos Labiales", categoria: "Maquillaje", marca: "Angelous", precioVentaDetal: 22000, precioCompra: 11000, stockActual: 2, stockMinimo: 15, proveedor: "prov_003", imagen: "https://picsum.photos/seed/Brillos/200/200" },
+      { id: "prod_006", nombre: "Perfume Capilar", categoria: "Capilar", marca: "Alfaparf", precioVentaDetal: 26000, precioCompra: 13000, stockActual: 9, stockMinimo: 8, proveedor: "prov_003", imagen: "https://picsum.photos/seed/Perfume/200/200" },
+      { id: "prod_007", nombre: "Polvo Compacto", categoria: "Maquillaje", marca: "CABA", precioVentaDetal: 34500, precioCompra: 17250, stockActual: 6, stockMinimo: 8, proveedor: "prov_001", imagen: "https://picsum.photos/seed/Polvo/200/200" },
+      { id: "prod_008", nombre: "Repolarizador", categoria: "Capilar", marca: "Salvatore", precioVentaDetal: 48000, precioCompra: 24000, stockActual: 7, stockMinimo: 6, proveedor: "prov_002", imagen: "https://picsum.photos/seed/Repolarizador/200/200" }
+    ];
+
+    const providers = [
+      { id: "prov_001", nombre: "Beauty Imports SA", telefono: "601-234-5678", email: "ventas@beautyimports.co", contacto: "Carlos Mendoza" },
+      { id: "prov_002", nombre: "Cosmeticos Premium", telefono: "601-987-6543", email: "pedidos@cosmeticospremium.co", contacto: "Lucia Gomez" },
+      { id: "prov_003", nombre: "Distribuciones Capilar", telefono: "601-555-9999", email: "compras@distcapilar.co", contacto: "Roberto Silva" }
+    ];
+
+    const db = {
+      products,
+      providers,
+      purchases: [],
+      movements: [],
+      alerts: []
+    };
+
+    // ==================== STATE ====================
+    const appState = {
+      currentRoute: "dashboard",
+      searchTerm: "",
+      activeAlerts: []
+    };
+
+    // ==================== FUNCIONES DE LÓGICA ====================
+    function calcularAlertas() {
+      db.alerts = [];
+      db.products.forEach(p => {
+        if (p.stockActual < p.stockMinimo) {
+          db.alerts.push({
+            id: uid("alert"),
+            productId: p.id,
+            tipo: p.stockActual === 0 ? "critico" : "bajo",
+            mensaje: `${p.nombre} stock: ${p.stockActual}/${p.stockMinimo}`,
+            fecha: today
+          });
+        }
+      });
+      appState.activeAlerts = db.alerts.filter(a => a.tipo === "critico").length;
+    }
+
+    function getEstadoStock(producto) {
+      const pct = (producto.stockActual / producto.stockMinimo) * 100;
+      if (pct >= 100) return { clase: "status-optimal", estado: "ÓPTIMO", color: "text-emerald-700" };
+      if (pct >= 50) return { clase: "status-warning", estado: "BAJO", color: "text-amber-700" };
+      return { clase: "status-critical", estado: "CRÍTICO", color: "text-red-700" };
+    }
+
+    // ==================== RENDERIZADO ====================
+    function renderDashboard(st, search = "") {
+      calcularAlertas();
+      const criteria = search.toLowerCase();
+      const conAlerta = st.products.filter(p => p.stockActual < p.stockMinimo && (!criteria || p.nombre.toLowerCase().includes(criteria)));
+      const stockBajo = st.products.filter(p => p.stockActual < p.stockMinimo).length;
+      const stockCritico = st.products.filter(p => p.stockActual === 0).length;
+      const valorInventario = st.products.reduce((s, p) => s + (p.stockActual * p.precioCompra), 0);
+
+      const alertCards = conAlerta.slice(0, 6).map(p => {
+        const estado = getEstadoStock(p);
+        return `
+          <div class="status-card ${estado.clase}">
+            <div class="flex justify-between items-start mb-1">
+              <div>
+                <p class="font-semibold text-sm">${p.nombre}</p>
+                <p class="text-xs text-slate-600">${p.marca}</p>
+              </div>
+              <span class="stock-badge ${estado.color === 'text-emerald-700' ? 'bg-emerald-100 text-emerald-700' : estado.color === 'text-amber-700' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${estado.estado}</span>
+            </div>
+            <div class="flex justify-between text-sm mb-2">
+              <span class="font-semibold">Stock: ${p.stockActual}</span>
+              <span class="text-slate-600">Min: ${p.stockMinimo}</span>
+            </div>
+            <button onclick="mostrarOrdenCompra('${p.id}')" class="text-xs font-semibold text-blue-600 hover:text-blue-700">📦 Crear orden →</button>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Stock bajo</p><p class="mt-2 text-2xl font-bold text-amber-700">${stockBajo}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Stock crítico</p><p class="mt-2 text-2xl font-bold text-red-700">${stockCritico}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Productos</p><p class="mt-2 text-2xl font-bold">${st.products.length}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Valor inventario</p><p class="mt-2 text-xl font-bold">${formatCurrency(valorInventario)}</p></div>
+        </div>
+
+        <div class="view-card">
+          <h3 class="text-lg font-bold mb-3">⚠️ Alertas de stock ${conAlerta.length > 0 ? `(${conAlerta.length})` : ''}</h3>
+          <div class="space-y-2">${alertCards || '<p class="text-sm text-slate-500 text-center py-4">Sin alertas - inventario en óptima</p>'}</div>
+        </div>
+      `;
+    }
+
+    function renderProductos(st, search = "") {
+      const criteria = search.toLowerCase();
+      const filtered = st.products.filter(p => !criteria || p.nombre.toLowerCase().includes(criteria));
+      
+      const rows = filtered.map(p => {
+        const estado = getEstadoStock(p);
+        const provider = st.providers.find(prov => prov.id === p.proveedor);
+        return `
+          <tr class="border-b text-sm hover:bg-slate-50">
+            <td class="px-3 py-2 font-semibold">${p.nombre}</td>
+            <td class="px-3 py-2">${p.marca}</td>
+            <td class="px-3 py-2">${formatCurrency(p.precioVentaDetal)}</td>
+            <td class="px-3 py-2">${formatCurrency(p.precioCompra)}</td>
+            <td class="px-3 py-2 text-right">${p.stockActual}</td>
+            <td class="px-3 py-2 text-right">${p.stockMinimo}</td>
+            <td class="px-3 py-2"><span class="stock-badge ${estado.color === 'text-emerald-700' ? 'bg-emerald-100 text-emerald-700' : estado.color === 'text-amber-700' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${estado.estado}</span></td>
+            <td class="px-3 py-2 text-right">
+              <button onclick="mostrarOrdenCompra('${p.id}')" class="text-blue-600 hover:text-blue-700 text-xs font-semibold">Ordenar</button>
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+      return `
+        <div class="view-card">
+          <h3 class="text-lg font-bold mb-4">Productos en inventario</h3>
+          <div class="overflow-x-auto rounded-xl border bg-white">
+            <table class="min-w-full">
+              <thead class="bg-slate-50 text-xs uppercase border-b">
+                <tr>
+                  <th class="px-3 py-2 text-left">Producto</th>
+                  <th class="px-3 py-2 text-left">Marca</th>
+                  <th class="px-3 py-2 text-right">P. Venta</th>
+                  <th class="px-3 py-2 text-right">P. Compra</th>
+                  <th class="px-3 py-2 text-right">Stock</th>
+                  <th class="px-3 py-2 text-right">Mín</th>
+                  <th class="px-3 py-2">Estado</th>
+                  <th class="px-3 py-2 text-right">Acción</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCompras(st, search = "") {
+      const criteria = search.toLowerCase();
+      const filtered = st.purchases.filter(p => !criteria || (st.products.find(prod => prod.id === p.productId)?.nombre.toLowerCase().includes(criteria)));
+      
+      const rows = filtered.map(p => {
+        const prod = st.products.find(pr => pr.id === p.productId);
+        const prov = st.providers.find(prov => prov.id === p.proveedorId);
+        const estadoBg = p.estado === "pendiente" ? "bg-amber-100 text-amber-700" : p.estado === "recibido" ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700";
+        return `
+          <tr class="border-b text-sm">
+            <td class="px-3 py-2">${p.id}</td>
+            <td class="px-3 py-2">${prod?.nombre || "---"}</td>
+            <td class="px-3 py-2">${prov?.nombre || "---"}</td>
+            <td class="px-3 py-2 text-right">${p.cantidad}</td>
+            <td class="px-3 py-2 text-right">${formatCurrency(p.cantidad * p.precioUnitario)}</td>
+            <td class="px-3 py-2">${formatDate(p.fecha)}</td>
+            <td class="px-3 py-2"><span class="stock-badge ${estadoBg} text-xs capitalize">${p.estado}</span></td>
+            <td class="px-3 py-2 text-right">
+              ${p.estado === "pendiente" ? `<button onclick="recibirCompra('${p.id}')" class="text-green-600 hover:text-green-700 text-xs font-semibold">Recibir</button>` : '---'}
+            </td>
+          </tr>
+        `;
+      }).join("");
+
+      return `
+        <div class="view-card">
+          <h3 class="text-lg font-bold mb-4">Órdenes de compra</h3>
+          <div class="overflow-x-auto rounded-xl border bg-white">
+            <table class="min-w-full">
+              <thead class="bg-slate-50 text-xs uppercase border-b">
+                <tr>
+                  <th class="px-3 py-2 text-left">Orden</th>
+                  <th class="px-3 py-2 text-left">Producto</th>
+                  <th class="px-3 py-2 text-left">Proveedor</th>
+                  <th class="px-3 py-2 text-right">Cantidad</th>
+                  <th class="px-3 py-2 text-right">Total</th>
+                  <th class="px-3 py-2">Fecha</th>
+                  <th class="px-3 py-2">Estado</th>
+                  <th class="px-3 py-2 text-right">Acción</th>
+                </tr>
+              </thead>
+              <tbody>${rows || '<tr><td colspan="8" class="px-3 py-4 text-center text-slate-500">Sin órdenes de compra</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderMovimientos(st, search = "") {
+      const criteria = search.toLowerCase();
+      const filtered = st.movements.filter(m => !criteria || (st.products.find(p => p.id === m.productId)?.nombre.toLowerCase().includes(criteria)));
+      
+      const rows = filtered.slice(-20).reverse().map(m => {
+        const prod = st.products.find(p => p.id === m.productId);
+        const tipoColor = m.tipo === "venta" ? "text-red-700" : m.tipo === "compra" ? "text-green-700" : "text-blue-700";
+        return `
+          <tr class="border-b text-sm">
+            <td class="px-3 py-2">${formatDate(m.fecha)}</td>
+            <td class="px-3 py-2">${prod?.nombre || "---"}</td>
+            <td class="px-3 py-2 capitalize"><span class="${tipoColor} font-semibold">${m.tipo}</span></td>
+            <td class="px-3 py-2 text-right font-semibold">${m.cantidad}</td>
+            <td class="px-3 py-2">${m.referencia}</td>
+          </tr>
+        `;
+      }).join("");
+
+      return `
+        <div class="view-card">
+          <h3 class="text-lg font-bold mb-4">Últimos movimientos</h3>
+          <div class="overflow-x-auto rounded-xl border bg-white">
+            <table class="min-w-full">
+              <thead class="bg-slate-50 text-xs uppercase border-b">
+                <tr>
+                  <th class="px-3 py-2 text-left">Fecha</th>
+                  <th class="px-3 py-2 text-left">Producto</th>
+                  <th class="px-3 py-2 text-left">Tipo</th>
+                  <th class="px-3 py-2 text-right">Cantidad</th>
+                  <th class="px-3 py-2 text-left">Referencia</th>
+                </tr>
+              </thead>
+              <tbody>${rows || '<tr><td colspan="5" class="px-3 py-4 text-center text-slate-500">Sin movimientos registrados</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderProveedores(st) {
+      const rows = st.providers.map(prov => {
+        const productos = st.products.filter(p => p.proveedor === prov.id).length;
+        const ordenes = st.purchases.filter(p => p.proveedorId === prov.id).length;
+        return `
+          <tr class="border-b text-sm hover:bg-slate-50">
+            <td class="px-3 py-2 font-semibold">${prov.nombre}</td>
+            <td class="px-3 py-2">${prov.contacto}</td>
+            <td class="px-3 py-2">${prov.telefono}</td>
+            <td class="px-3 py-2">${prov.email}</td>
+            <td class="px-3 py-2 text-right">${productos}</td>
+            <td class="px-3 py-2 text-right">${ordenes}</td>
+          </tr>
+        `;
+      }).join("");
+
+      return `
+        <div class="view-card">
+          <h3 class="text-lg font-bold mb-4">Proveedores</h3>
+          <div class="overflow-x-auto rounded-xl border bg-white">
+            <table class="min-w-full">
+              <thead class="bg-slate-50 text-xs uppercase border-b">
+                <tr>
+                  <th class="px-3 py-2 text-left">Proveedor</th>
+                  <th class="px-3 py-2 text-left">Contacto</th>
+                  <th class="px-3 py-2 text-left">Teléfono</th>
+                  <th class="px-3 py-2 text-left">Email</th>
+                  <th class="px-3 py-2 text-right">Productos</th>
+                  <th class="px-3 py-2 text-right">Órdenes</th>
+                </tr>
+              </thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // ==================== FUNCIONES PRINCIPALES ====================
+    const routes = [
+      { id: "dashboard", label: "Dashboard", icon: "📊", title: "Gestión de Inventario", render: renderDashboard },
+      { id: "productos", label: "Productos", icon: "📦", title: "Catálogo de productos", render: renderProductos },
+      { id: "compras", label: "Compras", icon: "🛒", title: "Órdenes de compra", render: renderCompras },
+      { id: "movimientos", label: "Movimientos", icon: "🔄", title: "Historial de movimientos", render: renderMovimientos },
+      { id: "proveedores", label: "Proveedores", icon: "🏢", title: "Gestión de proveedores", render: renderProveedores }
+    ];
+
+    function renderView() {
+      const route = routes.find(r => r.id === appState.currentRoute) || routes[0];
+      document.getElementById("viewTitle").textContent = route.title;
+      document.getElementById("appView").innerHTML = route.render(db, appState.searchTerm);
+      renderSidebar();
+    }
+
+    function renderSidebar() {
+      const nav = document.getElementById("sidebarNav");
+      nav.innerHTML = routes.map(r => {
+        const active = r.id === appState.currentRoute ? "active" : "";
+        return `<button onclick="cambiarRuta('${r.id}')" class="nav-link ${active}"><span>${r.icon}</span><span>${r.label}</span></button>`;
+      }).join("");
+
+      calcularAlertas();
+      const alertCount = document.querySelector(".alert-count");
+      if (alertCount) alertCount.textContent = appState.activeAlerts;
+    }
+
+    function cambiarRuta(rutaId) {
+      appState.currentRoute = rutaId;
+      renderView();
+    }
+
+    function mostrarOrdenCompra(productId) {
+      const product = db.products.find(p => p.id === productId);
+      if (!product) return;
+
+      const provider = db.providers.find(p => p.id === product.proveedor);
+      const cantidadSugerida = product.stockMinimo - product.stockActual;
+
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `
+        <h3 class="text-lg font-bold mb-4">Crear orden de compra</h3>
+        
+        <div class="bg-slate-50 p-3 rounded-lg mb-4 text-sm space-y-2">
+          <div class="flex justify-between"><span class="font-semibold">${product.nombre}</span><span>${product.marca}</span></div>
+          <div class="flex justify-between text-xs text-slate-600"><span>Stock actual:</span><span>${product.stockActual}</span></div>
+          <div class="flex justify-between text-xs text-slate-600"><span>Stock mínimo:</span><span>${product.stockMinimo}</span></div>
+          <div class="flex justify-between text-xs text-slate-600"><span>Diferencia:</span><span>${cantidadSugerida}</span></div>
+          <div class="flex justify-between font-semibold"><span>P. Compra:</span><span>${formatCurrency(product.precioCompra)}</span></div>
+          <div class="flex justify-between text-xs text-slate-600"><span>Proveedor:</span><span>${provider?.nombre || "---"}</span></div>
+        </div>
+
+        <div class="space-y-3 mb-4">
+          <div>
+            <label class="block text-sm font-semibold mb-1">Cantidad</label>
+            <input id="cantidadInput" type="number" value="${cantidadSugerida}" min="1" class="w-full px-3 py-2 border rounded-lg text-sm" />
+          </div>
+          <div id="totalEstimadoDiv" class="bg-blue-50 p-3 rounded-lg text-sm">
+            <p>Total estimado: <span class="font-bold" id="totalEstimado">${formatCurrency(cantidadSugerida * product.precioCompra)}</span></p>
+          </div>
+        </div>
+
+        <div class="flex gap-2">
+          <button onclick="cerrarModal()" class="flex-1 px-3 py-2 border rounded-lg font-semibold">Cancelar</button>
+          <button onclick="crearOrdenCompra('${productId}')" class="flex-1 px-3 py-2 bg-slate-900 text-white rounded-lg font-semibold">Crear orden</button>
+        </div>
+      `;
+
+      const cantidadInput = div.querySelector("#cantidadInput");
+      cantidadInput.addEventListener("input", () => {
+        const total = cantidadInput.value * product.precioCompra;
+        div.querySelector("#totalEstimado").textContent = formatCurrency(total);
+      });
+
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("modalBackdrop").classList.add("active");
+    }
+
+    function crearOrdenCompra(productId) {
+      const product = db.products.find(p => p.id === productId);
+      const cantidad = parseInt(document.getElementById("cantidadInput").value);
+
+      if (cantidad <= 0) {
+        showToast("Cantidad inválida", "danger");
+        return;
+      }
+
+      const order = {
+        id: uid("order"),
+        productId,
+        proveedorId: product.proveedor,
+        cantidad,
+        precioUnitario: product.precioCompra,
+        fecha: today,
+        estado: "pendiente"
+      };
+
+      db.purchases.push(order);
+      db.movements.push({
+        id: uid("mov"),
+        productId,
+        tipo: "compra",
+        cantidad,
+        fecha: today,
+        referencia: order.id
+      });
+
+      showToast(`Orden de compra creada: ${order.id}`, "success");
+      cerrarModal();
+      cambiarRuta("compras");
+    }
+
+    function recibirCompra(orderId) {
+      const order = db.purchases.find(p => p.id === orderId);
+      if (!order) return;
+
+      order.estado = "recibido";
+      const product = db.products.find(p => p.id === order.productId);
+      if (product) {
+        product.stockActual += order.cantidad;
+      }
+
+      showToast(`Compra recibida: ${order.cantidad} unidades de ${product?.nombre}`, "success");
+      renderView();
+    }
+
+    function cerrarModal() {
+      document.getElementById("modalBackdrop").classList.remove("active");
+    }
+
+    function startClock() {
+      const update = () => {
+        document.getElementById("liveClock").textContent = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+      };
+      update();
+      setInterval(update, 1000);
+    }
+
+    // ==================== EVENTOS ====================
+    document.getElementById("globalSearch").addEventListener("input", e => {
+      appState.searchTerm = e.target.value;
+      renderView();
+    });
+
+    document.getElementById("alertBtn").addEventListener("click", () => {
+      appState.currentRoute = "dashboard";
+      renderView();
+    });
+
+    document.getElementById("modalBackdrop").addEventListener("click", (e) => {
+      if (e.target === document.getElementById("modalBackdrop")) {
+        cerrarModal();
+      }
+    });
+
+    // ==================== INICIO ====================
+    renderView();
+    startClock();
+  </script>
+</body>
+</html>

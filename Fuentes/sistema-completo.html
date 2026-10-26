@@ -1,0 +1,1536 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mujer Magica - Sistema Completo POS + Inventario + Reportes</title>
+  <link rel="icon" type="image/png" href="images/logo_fav_icon.png?v=2" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --brand-primary: #f97316; --brand-secondary: #14b8a6; }
+    body { font-family: "Manrope", sans-serif; }
+    h1, h2, h3, h4, h5, h6 { font-family: "Sora", sans-serif; }
+    .app-bg { background: radial-gradient(circle at 12% 10%, rgba(249, 115, 22, 0.16), transparent 28%), radial-gradient(circle at 88% 20%, rgba(20, 184, 166, 0.16), transparent 34%), linear-gradient(145deg, #fff7ed, #ecfeff 50%, #eff6ff); }
+    .panel-glass { backdrop-filter: blur(18px); background: linear-gradient(165deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.66)); box-shadow: 0 18px 44px -18px rgba(15, 23, 42, 0.28); }
+    .brand-gradient { background: linear-gradient(135deg, #ea580c, #f59e0b 50%, #0f766e 100%); }
+    .nav-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border-radius: 14px; color: #334155; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 180ms ease; border: 1px solid transparent; }
+    .nav-link:hover { background: rgba(255, 255, 255, 0.85); }
+    .nav-link.active { background: rgba(15, 23, 42, 0.92); color: #fff; }
+    .kpi-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.84); padding: 18px; }
+    .view-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.86); padding: 18px; }
+    .stock-badge { border-radius: 999px; padding: 6px 12px; font-size: 11px; font-weight: 700; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 40; }
+    .modal-backdrop.active { display: flex; align-items: center; justify-content: center; }
+    .modal-content { background: white; border-radius: 20px; display: flex; flex-direction: column; width: calc(100% - 2rem); max-width: 600px; max-height: calc(100vh - 2rem); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); }
+    .modal-content.modal-wide { max-width: 820px; }
+    .modal-header { padding: 20px; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
+    .modal-body { padding: 16px 20px; overflow-y: auto; flex: 1; min-height: 0; }
+    .modal-footer { padding: 16px 20px; border-top: 1px solid #e2e8f0; display: flex; gap: 8px; flex-shrink: 0; }
+    .modal-body img { max-width: 80px; max-height: 80px; border-radius: 8px; object-fit: cover; }
+    .toast-item { border-radius: 14px; color: #fff; font-size: 13px; padding: 10px 14px; animation: slide-up 220ms ease; }
+    @keyframes slide-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes fadeInOut { 0% { opacity: 0; } 10% { opacity: 1; } 90% { opacity: 1; } 100% { opacity: 0; } }
+    .cart-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; background: #ef4444; color: white; border-radius: 999px; font-size: 11px; font-weight: bold; }
+    .product-card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; text-align: center; transition: all 200ms ease; display: flex; flex-direction: column; }
+    .product-card:hover { border-color: #0f766e; box-shadow: 0 4px 12px rgba(15, 118, 110, 0.15); }
+    .chart-bar { height: 20px; border-radius: 4px; background: linear-gradient(90deg, #0f766e, #14b8a6); display: inline-block; transition: width 300ms ease; }
+    .rank-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; border-radius: 50%; font-weight: bold; font-size: 12px; }
+    .rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
+    .rank-2 { background: linear-gradient(135deg, #c7d2fe, #a5b4fc); color: #3730a3; }
+    .rank-3 { background: linear-gradient(135deg, #fed7aa, #fb923c); color: white; }
+    .metric-up { color: #10b981; }
+    .metric-down { color: #ef4444; }
+    .status-card { border-radius: 16px; border-left: 4px solid; padding: 12px; }
+    .status-optimal { border-left-color: #10b981; background: #ecfdf5; }
+    .status-warning { border-left-color: #f59e0b; background: #fffbeb; }
+    .status-critical { border-left-color: #ef4444; background: #fef2f2; }
+    .nav-category { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; padding: 12px 14px; margin-top: 10px; }
+    .sidebar-toggle { width: 44px; height: 44px; padding: 8px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); color: white; cursor: pointer; transition: all 200ms ease; }
+    .sidebar-toggle:hover { background: rgba(255, 255, 255, 0.3); }
+    aside { transition: transform 300ms ease, width 300ms ease; width: 280px; }
+    aside.collapsed { transform: translateX(-100%); width: 0; }
+    @media (max-width: 1024px) { aside { position: fixed; left: 0; top: 0; height: 100vh; z-index: 30; } aside.collapsed { transform: translateX(-100%); } }
+    #toggleSidebar { position: fixed; top: 20px; left: 20px; z-index: 35; display: none; }
+    @media (max-width: 1024px) { #toggleSidebar { display: flex; } }
+    main { flex: 1; }
+    .cart-alerts-top { display: flex; gap: 8px; align-items: center; z-index: 20; flex-wrap: wrap; }
+  </style>
+</head>
+<body class="app-bg text-slate-800">
+  <div class="min-h-screen p-4 md:p-6">
+    <button id="toggleSidebar" class="sidebar-toggle">☰</button>
+    <div class="mx-auto grid max-w-[1440px] grid-cols-1 gap-4 lg:grid-cols-[280px_1fr] relative">
+      <!-- SIDEBAR -->
+      <aside class="panel-glass rounded-3xl border border-white/60 lg:sticky lg:top-6 h-fit lg:h-[calc(100vh-80px)] flex flex-col">
+        <div class="brand-gradient px-6 py-7 text-white flex-shrink-0">
+          <p class="text-xs uppercase tracking-[0.2em] text-white/80">Mujer Magica</p>
+          <h1 class="text-2xl font-bold">Sistema Integrado</h1>
+          <p class="mt-2 text-sm text-white/90">POS + Inventario + Reportes</p>
+        </div>
+        <nav id="sidebarNav" class="space-y-2 px-4 py-4 overflow-y-auto flex-1"></nav>
+      </aside>
+
+      <!-- MAIN -->
+      <main class="space-y-4">
+        <header class="panel-glass rounded-3xl border border-white/60 p-4 md:p-5">
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between md:gap-4">
+            <h2 id="viewTitle" class="text-2xl font-bold min-w-fit">Bienvenido</h2>
+            <input id="globalSearch" class="rounded-xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm flex-1 md:flex-1" placeholder="Buscar..." />
+            <div class="cart-alerts-top">
+              <button id="cartBtn" class="rounded-2xl bg-orange-600 text-white px-3 py-2 text-xs font-semibold flex items-center justify-center gap-2 whitespace-nowrap">🛒 <span class="cart-badge">0</span></button>
+              <button id="alertBtn" class="rounded-2xl bg-red-600 text-white px-3 py-2 text-xs font-semibold flex items-center justify-center gap-2 whitespace-nowrap">⚠️ <span class="alert-count">0</span></button>
+              <div class="rounded-2xl bg-slate-900 text-white px-3 py-2 text-xs font-semibold text-center whitespace-nowrap">
+                <p id="liveClock">--:--:--</p>
+              </div>
+            </div>
+          </div>
+        </header>
+        <section id="appView" class="space-y-4"></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toastHost" class="pointer-events-none fixed bottom-5 right-5 z-50 space-y-2"></div>
+  <div id="modalBackdrop" class="modal-backdrop"><div id="modalContent"></div></div>
+
+  <script>
+    // ==================== UTILIDADES ====================
+    const formatCurrency = (v) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v || 0);
+    const formatDate = (d) => { const date = new Date(d); return Number.isNaN(date.getTime()) ? "--" : new Intl.DateTimeFormat("es-CO", { year: "numeric", month: "short", day: "2-digit" }).format(date); };
+    const uid = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 10)}`;
+    const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[character]));
+    const showToast = (m, t = "info") => { const h = document.getElementById("toastHost"); if (!h) return; const p = { info: "bg-slate-900", success: "bg-emerald-700", warning: "bg-amber-700", danger: "bg-red-700" }; const e = document.createElement("div"); e.className = `toast-item ${p[t] || p.info}`; e.textContent = m; h.appendChild(e); setTimeout(() => e.remove(), 2600); };
+
+    // ==================== BASE DE DATOS (MySQL via backend-node) ====================
+    const today = new Date().toISOString();
+    const API_BASE = "http://localhost:4000/api";
+
+    // Guarda el estado completo en MySQL (reemplaza el antiguo localStorage)
+    async function saveDB() {
+      try {
+        const res = await fetch(`${API_BASE}/state`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(db)
+        });
+        if (!res.ok) throw new Error("Respuesta no válida del servidor");
+
+        const indicator = document.createElement("div");
+        indicator.style.cssText = "position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 8px 16px; border-radius: 6px; font-size: 12px; z-index: 9999; animation: fadeInOut 2s ease-in-out;";
+        indicator.textContent = "✓ Guardado en MySQL";
+        document.body.appendChild(indicator);
+        setTimeout(() => indicator.remove(), 2000);
+        return true;
+      } catch (e) {
+        console.error("Error guardando BD:", e);
+        showToast("No se pudo guardar en MySQL. ¿Está corriendo el backend en el puerto 4000?", "danger");
+        return false;
+      }
+    }
+
+    // Carga el estado completo desde MySQL. Devuelve null si el backend no responde.
+    async function loadDB() {
+      try {
+        const res = await fetch(`${API_BASE}/state`);
+        if (!res.ok) throw new Error("Respuesta no válida del servidor");
+        return await res.json();
+      } catch (e) {
+        console.error("Error cargando BD desde MySQL:", e);
+        return null;
+      }
+    }
+
+    // Sube una imagen al backend y retorna una ruta relativa portable (images/archivo.png)
+    async function uploadProductImage(file) {
+      const formData = new FormData();
+      formData.append("image", file, file.name);
+
+      const res = await fetch(`${API_BASE}/upload-image`, {
+        method: "POST",
+        body: formData
+      });
+
+      if (!res.ok) {
+        let detalle = "No se pudo subir la imagen";
+        try {
+          const errorPayload = await res.json();
+          if (errorPayload?.error) detalle = errorPayload.error;
+        } catch (_ignored) {
+          // Mantener mensaje por defecto cuando el backend no responde JSON.
+        }
+        throw new Error(detalle);
+      }
+
+      const payload = await res.json();
+      if (!payload?.path) {
+        throw new Error("Respuesta inválida al subir la imagen");
+      }
+
+      return payload.path;
+    }
+
+    // Sube a MySQL un respaldo previamente guardado en localStorage (clave "mujermagicaDB")
+    async function migrarDatosLocalStorage(saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        const res = await fetch(`${API_BASE}/migrate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(parsed)
+        });
+        if (!res.ok) throw new Error("Error migrando datos");
+        localStorage.setItem("mujermagicaDB_backup", saved);
+        localStorage.removeItem("mujermagicaDB");
+        showToast("Datos migrados a MySQL correctamente", "success");
+        return true;
+      } catch (e) {
+        console.error("Error migrando datos a MySQL:", e);
+        showToast("No se pudieron migrar los datos a MySQL", "danger");
+        return false;
+      }
+    }
+
+    const defaultProducts = [
+      { id: "prod_001", nombre: "Shampoo Kativa", categoria: "Capilar", marca: "Kativa", precioVentaDetal: 29000, precioCompra: 14500, stockActual: 24, stockMinimo: 10, proveedor: "prov_001", imagen: "images/prod_001.png" },
+      { id: "prod_002", nombre: "Acondicionador Wella", categoria: "Capilar", marca: "Wella", precioVentaDetal: 28000, precioCompra: 14000, stockActual: 20, stockMinimo: 8, proveedor: "prov_002", imagen: "images/prod_002.png" },
+      { id: "prod_003", nombre: "Mantequilla Capilar", categoria: "Capilar", marca: "Milagros", precioVentaDetal: 36000, precioCompra: 18000, stockActual: 3, stockMinimo: 12, proveedor: "prov_001", imagen: "images/prod_003.png" },
+      { id: "prod_004", nombre: "Sombras Premium", categoria: "Maquillaje", marca: "Loreal", precioVentaDetal: 39000, precioCompra: 19500, stockActual: 11, stockMinimo: 5, proveedor: "prov_002", imagen: "images/prod_004.png" },
+      { id: "prod_005", nombre: "Brillos Labiales", categoria: "Maquillaje", marca: "Angelous", precioVentaDetal: 22000, precioCompra: 11000, stockActual: 2, stockMinimo: 15, proveedor: "prov_003", imagen: "images/prod_005.png" },
+      { id: "prod_006", nombre: "Perfume Capilar", categoria: "Capilar", marca: "Alfaparf", precioVentaDetal: 26000, precioCompra: 13000, stockActual: 9, stockMinimo: 8, proveedor: "prov_003", imagen: "images/prod_006.png" },
+      { id: "prod_007", nombre: "Polvo Compacto", categoria: "Maquillaje", marca: "CABA", precioVentaDetal: 34500, precioCompra: 17250, stockActual: 6, stockMinimo: 8, proveedor: "prov_001", imagen: "images/prod_007.png" },
+      { id: "prod_008", nombre: "Repolarizador", categoria: "Capilar", marca: "Salvatore", precioVentaDetal: 48000, precioCompra: 24000, stockActual: 7, stockMinimo: 6, proveedor: "prov_002", imagen: "images/prod_008.png" }
+    ];
+
+    const defaultProviders = [
+      { id: "prov_001", nombre: "Beauty Imports SA", telefono: "601-234-5678", email: "ventas@beautyimports.co", contacto: "Carlos Mendoza" },
+      { id: "prov_002", nombre: "Cosmeticos Premium", telefono: "601-987-6543", email: "pedidos@cosmeticospremium.co", contacto: "Lucia Gomez" },
+      { id: "prov_003", nombre: "Distribuciones Capilar", telefono: "601-555-9999", email: "compras@distcapilar.co", contacto: "Roberto Silva" }
+    ];
+
+    const defaultCustomers = [
+      { id: "cli_001", nombre: "Mariana Gil", documento: "1023456789" },
+      { id: "cli_002", nombre: "Diana Toro", documento: "52999887" }
+    ];
+
+    const defaultServices = [
+      { id: "svc_alisado", nombre: "Alisado", precioSugerido: null, costoSugerido: null, activo: true },
+      { id: "svc_terapia_capilar", nombre: "Terapia capilar", precioSugerido: null, costoSugerido: null, activo: true },
+      { id: "svc_hidratacion", nombre: "Hidratación", precioSugerido: null, costoSugerido: null, activo: true },
+      { id: "svc_henna", nombre: "Henna", precioSugerido: null, costoSugerido: null, activo: true },
+      { id: "svc_lifting_pestanas", nombre: "Lifting de pestañas", precioSugerido: null, costoSugerido: null, activo: true }
+    ];
+
+    const generateDefaultSales = () => {
+      const sales = [];
+      for (let i = 0; i < 45; i++) {
+        const daysAgo = Math.floor(Math.random() * 30);
+        const date = new Date();
+        date.setDate(date.getDate() - daysAgo);
+        const productId = defaultProducts[Math.floor(Math.random() * defaultProducts.length)].id;
+        const product = defaultProducts.find(p => p.id === productId);
+        const cantidad = Math.floor(Math.random() * 5) + 1;
+        const subtotal = cantidad * product.precioVentaDetal;
+        const iva = 0;
+        sales.push({
+          id: uid("sale"),
+          fecha: date.toISOString(),
+          clienteId: Math.random() > 0.6 ? defaultCustomers[Math.floor(Math.random() * defaultCustomers.length)].id : null,
+          items: [{ productId, cantidad, precio: product.precioVentaDetal }],
+          subtotal,
+          iva,
+          total: subtotal,
+          metodoPago: ["Efectivo", "Tarjeta", "Transferencia"][Math.floor(Math.random() * 3)]
+        });
+      }
+      return sales;
+    };
+
+    const createDefaultDB = () => ({
+      products: JSON.parse(JSON.stringify(defaultProducts)),
+      providers: JSON.parse(JSON.stringify(defaultProviders)),
+      customers: JSON.parse(JSON.stringify(defaultCustomers)),
+      services: JSON.parse(JSON.stringify(defaultServices)),
+      sales: generateDefaultSales(),
+      purchases: [],
+      movements: [],
+      alerts: []
+    });
+
+    let db;
+
+    // ==================== STATE ====================
+    const appState = {
+      currentRoute: "pos",
+      searchTerm: "",
+      cart: [],
+      posTab: "productos",
+      servicesTab: "catalogo",
+      selectedPosServiceId: "",
+      posBrandFilter: "",
+      posCategoryFilter: "",
+      periodo: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`,
+      activeAlerts: 0
+    };
+
+    // ==================== FUNCIONES DE LÓGICA ====================
+    function calcularAlertas() {
+      db.alerts = [];
+      db.products.forEach(p => {
+        if (p.stockActual < p.stockMinimo) {
+          db.alerts.push({
+            id: uid("alert"),
+            productId: p.id,
+            tipo: p.stockActual === 0 ? "critico" : "bajo",
+            mensaje: `${p.nombre} stock: ${p.stockActual}/${p.stockMinimo}`,
+            fecha: today
+          });
+        }
+      });
+      appState.activeAlerts = db.alerts.filter(a => a.tipo === "critico").length;
+      document.querySelector(".alert-count").textContent = appState.activeAlerts;
+    }
+
+    function getEstadoStock(producto) {
+      const pct = (producto.stockActual / producto.stockMinimo) * 100;
+      if (pct >= 100) return { clase: "status-optimal", estado: "ÓPTIMO", color: "text-emerald-700" };
+      if (pct >= 50) return { clase: "status-warning", estado: "BAJO", color: "text-amber-700" };
+      return { clase: "status-critical", estado: "CRÍTICO", color: "text-red-700" };
+    }
+
+    function filterSalesByPeriod(sales, periodo) {
+      const now = new Date();
+      const monthlyPeriod = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(periodo);
+      return sales.filter(sale => {
+        const saleDate = new Date(sale.fecha);
+        if (periodo === "todo") return true;
+        if (monthlyPeriod) return saleDate.getFullYear() === Number(monthlyPeriod[1]) && saleDate.getMonth() + 1 === Number(monthlyPeriod[2]);
+        if (periodo === "30") return (now - saleDate) / (1000 * 60 * 60 * 24) <= 30;
+        if (periodo === "7") return (now - saleDate) / (1000 * 60 * 60 * 24) <= 7;
+        if (periodo === "1") return saleDate.toDateString() === now.toDateString();
+        return true;
+      });
+    }
+
+    function renderPeriodSelector(st) {
+      const currentYear = new Date().getFullYear();
+      const years = st.sales.map(sale => new Date(sale.fecha).getFullYear()).filter(Number.isFinite);
+      const firstYear = Math.min(currentYear, ...years);
+      const lastYear = Math.max(currentYear, ...years);
+      const formatter = new Intl.DateTimeFormat("es-CO", { month: "long", year: "numeric" });
+      const options = [];
+      for (let year = lastYear; year >= firstYear; year--) {
+        for (let month = 12; month >= 1; month--) {
+          const value = `${year}-${String(month).padStart(2, "0")}`;
+          const label = formatter.format(new Date(year, month - 1, 1));
+          options.push(`<option value="${value}" ${appState.periodo === value ? "selected" : ""}>${label}</option>`);
+        }
+      }
+      return `<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between"><label for="periodoMes" class="text-sm font-semibold">Per&iacute;odo de ventas</label><select id="periodoMes" onchange="setMonthlyPeriod(this.value)" class="w-full sm:w-64 rounded-lg border px-3 py-2 text-sm bg-white">${options.join("")}<option value="todo" ${appState.periodo === "todo" ? "selected" : ""}>Todo el historial</option></select></div>`;
+    }
+
+    function setMonthlyPeriod(periodo) {
+      if (periodo !== "todo" && !/^\d{4}-(0[1-9]|1[0-2])$/.test(periodo)) return;
+      appState.periodo = periodo;
+      renderView();
+    }
+
+    function calcularMetricasGenerales(sales) {
+      const totalVentas = sales.reduce((s, sale) => s + sale.total, 0);
+      const items = sales.flatMap(sale => sale.items);
+      const productos = items.filter(item => item.tipo !== "servicio");
+      const servicios = items.filter(item => item.tipo === "servicio");
+      const ingresosProductos = productos.reduce((sum, item) => sum + item.cantidad * item.precio, 0);
+      const ingresosServicios = servicios.reduce((sum, item) => sum + item.cantidad * item.precio, 0);
+      const totalCostoProductos = productos.reduce((sum, item) => sum + item.cantidad * (db.products.find(product => product.id === item.productId)?.precioCompra ?? 0), 0);
+      const totalCosto = totalCostoProductos + servicios.reduce((sum, item) => sum + item.cantidad * (item.costo ?? 0), 0);
+      const serviciosSinCosto = servicios.filter(item => item.costo == null).reduce((sum, item) => sum + item.cantidad, 0);
+      const ingresosSinCosto = servicios.filter(item => item.costo == null).reduce((sum, item) => sum + item.cantidad * item.precio, 0);
+      const gananciaBruta = totalVentas - totalCosto - ingresosSinCosto;
+      const ingresosConCosto = totalVentas - ingresosSinCosto;
+      const margenPromedio = ingresosConCosto > 0 ? (gananciaBruta / ingresosConCosto) * 100 : 0;
+      const cantVentas = sales.length;
+      const ventaPromedio = cantVentas > 0 ? totalVentas / cantVentas : 0;
+      return { totalVentas, totalCosto, totalCostoProductos, ingresosProductos, ingresosServicios, serviciosSinCosto, gananciaBruta, margenPromedio, cantVentas, ventaPromedio };
+    }
+
+    function productosMasVendidos(sales, limite = 5) {
+      const productMap = {};
+      sales.forEach(sale => {
+        sale.items.forEach(item => {
+          if (item.tipo === "servicio") return;
+          if (!productMap[item.productId]) productMap[item.productId] = { cantidad: 0, ventas: 0, costo: 0 };
+          productMap[item.productId].cantidad += item.cantidad;
+          productMap[item.productId].ventas += item.cantidad * item.precio;
+          productMap[item.productId].costo += item.cantidad * (db.products.find(p => p.id === item.productId)?.precioCompra ?? 0);
+        });
+      });
+      return Object.entries(productMap).map(([productId, data]) => {
+        const product = db.products.find(p => p.id === productId);
+        return { ...product, ...data, ganancia: data.ventas - data.costo, margen: ((data.ventas - data.costo) / data.ventas) * 100 };
+      }).sort((a, b) => b.cantidad - a.cantidad).slice(0, limite);
+    }
+
+    function clientesMasActivos(sales, limite = 5) {
+      const clientMap = {};
+      sales.forEach(sale => {
+        if (sale.clienteId) {
+          if (!clientMap[sale.clienteId]) clientMap[sale.clienteId] = { compras: 0, total: 0 };
+          clientMap[sale.clienteId].compras += 1;
+          clientMap[sale.clienteId].total += sale.total;
+        }
+      });
+      return Object.entries(clientMap).map(([clienteId, data]) => {
+        const customer = db.customers.find(c => c.id === clienteId);
+        return { ...customer, ...data, promedioCompra: data.total / data.compras };
+      }).sort((a, b) => b.total - a.total).slice(0, limite);
+    }
+
+    // ==================== RENDERIZADO ====================
+    function renderDashboard(st, search = "") {
+      calcularAlertas();
+      const conAlerta = st.products.filter(p => p.stockActual < p.stockMinimo);
+      const stockBajo = st.products.filter(p => p.stockActual < p.stockMinimo).length;
+      const stockCritico = st.products.filter(p => p.stockActual === 0).length;
+      const valorInventario = st.products.reduce((s, p) => s + (p.stockActual * p.precioCompra), 0);
+      const inversionAcumulada = valorInventario + calcularMetricasGenerales(st.sales).totalCostoProductos;
+      const metricas = calcularMetricasGenerales(filterSalesByPeriod(st.sales, appState.periodo));
+
+      const alertCards = conAlerta.slice(0, 6).map(p => {
+        const estado = getEstadoStock(p);
+        return `
+          <div class="status-card ${estado.clase}">
+            <div class="flex justify-between items-start mb-1">
+              <div><p class="font-semibold text-sm">${p.nombre}</p><p class="text-xs text-slate-600">${p.marca}</p></div>
+              <span class="stock-badge ${estado.color === 'text-emerald-700' ? 'bg-emerald-100 text-emerald-700' : estado.color === 'text-amber-700' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${estado.estado}</span>
+            </div>
+            <div class="flex justify-between text-sm mb-2"><span class="font-semibold">Stock: ${p.stockActual}</span><span class="text-slate-600">Min: ${p.stockMinimo}</span></div>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        ${renderPeriodSelector(st)}
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.totalVentas)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Stock bajo</p><p class="mt-2 text-2xl font-bold text-amber-700">${stockBajo}</p><p class="text-xs text-slate-500 mt-1">Actual</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">${metricas.serviciosSinCosto ? "Ganancia conocida" : "Ganancia"}</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(metricas.gananciaBruta)}</p>${metricas.serviciosSinCosto ? `<p class="text-xs text-amber-700 mt-1">${metricas.serviciosSinCosto} servicios sin costo registrado</p>` : ""}</div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Inversi&oacute;n acumulada</p><p class="mt-2 text-2xl font-bold">${formatCurrency(inversionAcumulada)}</p><p class="text-xs text-slate-500 mt-1">Estimado hist&oacute;rico a costo actual</p></div>
+        </div>
+        <div class="view-card"><h3 class="text-lg font-bold mb-3">⚠️ Alertas de stock</h3><div class="space-y-2">${alertCards || '<p class="text-sm text-slate-500 text-center py-4">Sin alertas</p>'}</div></div>
+      `;
+    }
+
+    function renderProductos(st, search = "") {
+      const criteria = search.toLowerCase();
+      const filtered = st.products.filter(p => !criteria || p.nombre.toLowerCase().includes(criteria));
+      const rows = filtered.map(p => {
+        const estado = getEstadoStock(p);
+        return `<tr class="border-b text-sm hover:bg-slate-50"><td class="px-3 py-2 font-semibold">${p.nombre}</td><td class="px-3 py-2">${p.marca}</td><td class="px-3 py-2">${formatCurrency(p.precioVentaDetal)}</td><td class="px-3 py-2">${formatCurrency(p.precioCompra)}</td><td class="px-3 py-2 text-right">${p.stockActual}</td><td class="px-3 py-2"><span class="stock-badge ${estado.color === 'text-emerald-700' ? 'bg-emerald-100 text-emerald-700' : estado.color === 'text-amber-700' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${estado.estado}</span></td><td class="px-3 py-2 text-center"><button type="button" onclick="showEditProductModal('${p.id}')" class="text-slate-700 hover:text-slate-900 text-sm font-semibold">✏️ Editar</button></td></tr>`;
+      }).join("");
+      return `<div class="view-card"><div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4"><div><h3 class="text-lg font-bold">📦 Catálogo de productos</h3><p class="text-sm text-slate-500">Alta y edición de productos</p></div><button type="button" onclick="showEditProductModal()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ Nuevo producto</button></div><div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="px-3 py-2 text-left">Producto</th><th class="px-3 py-2 text-left">Marca</th><th class="px-3 py-2 text-right">P. Venta</th><th class="px-3 py-2 text-right">P. Compra</th><th class="px-3 py-2 text-right">Stock</th><th class="px-3 py-2">Estado</th><th class="px-3 py-2 text-center">Acción</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    }
+
+    function renderProveedores(st, search = "") {
+      const criteria = search.toLowerCase();
+      const filtered = st.providers.filter(p => !criteria || `${p.nombre} ${p.contacto} ${p.telefono} ${p.email}`.toLowerCase().includes(criteria));
+      const cards = filtered.map(provider => {
+        const productosAsignados = st.products.filter(p => p.proveedor === provider.id).length;
+        const stockTotal = st.products.filter(p => p.proveedor === provider.id).reduce((s, p) => s + p.stockActual, 0);
+        return `
+          <div class="view-card">
+            <div class="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <h4 class="font-bold text-base">${provider.nombre}</h4>
+                <p class="text-sm text-slate-500">${provider.contacto}</p>
+              </div>
+              <button type="button" onclick="showEditProviderModal('${provider.id}')" class="text-sm font-semibold text-slate-700 hover:text-slate-900">✏️ Editar</button>
+            </div>
+            <div class="space-y-1 text-sm text-slate-600">
+              <p>📞 ${provider.telefono}</p>
+              <p>✉️ ${provider.email}</p>
+            </div>
+            <div class="mt-4 grid grid-cols-2 gap-2 text-sm">
+              <div class="rounded-xl bg-slate-50 p-3"><p class="text-xs text-slate-500">Productos</p><p class="font-bold">${productosAsignados}</p></div>
+              <div class="rounded-xl bg-slate-50 p-3"><p class="text-xs text-slate-500">Stock total</p><p class="font-bold">${stockTotal}</p></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      return `
+        <div class="view-card mb-4">
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 class="text-lg font-bold">🏢 Proveedores</h3>
+              <p class="text-sm text-slate-500">Crear, editar y revisar proveedores vinculados</p>
+            </div>
+            <button type="button" onclick="showEditProviderModal()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ Nuevo proveedor</button>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">${cards || '<div class="view-card md:col-span-2 xl:col-span-3"><p class="text-center text-sm text-slate-500 py-6">Sin proveedores</p></div>'}</div>
+      `;
+    }
+
+    function showEditProviderModal(providerId) {
+      const provider = providerId ? db.providers.find(p => p.id === providerId) : null;
+      const isNew = !provider;
+      const title = isNew ? "Nuevo proveedor" : `Editar ${provider.nombre}`;
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `
+        <div class="modal-header">
+          <h3 class="text-lg font-bold">${title}</h3>
+        </div>
+        <div class="modal-body">
+          <form id="providerForm" class="space-y-3">
+            <input type="hidden" id="providerId" value="${provider?.id || ""}" />
+            <div>
+              <label class="block text-sm font-semibold mb-1">Nombre</label>
+              <input type="text" id="providerName" value="${provider?.nombre || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-1">Contacto</label>
+              <input type="text" id="providerContact" value="${provider?.contacto || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-semibold mb-1">Teléfono</label>
+                <input type="text" id="providerPhone" value="${provider?.telefono || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" />
+              </div>
+              <div>
+                <label class="block text-sm font-semibold mb-1">Correo</label>
+                <input type="email" id="providerEmail" value="${provider?.email || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" />
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btnCancelProvider" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cancelar</button>
+          <button type="submit" form="providerForm" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Guardar</button>
+        </div>
+      `;
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("modalBackdrop").classList.add("active");
+
+      document.getElementById("btnCancelProvider").addEventListener("click", cerrarModal);
+      document.getElementById("providerForm").addEventListener("submit", e => {
+        e.preventDefault();
+        const nombre = document.getElementById("providerName").value.trim();
+        const contacto = document.getElementById("providerContact").value.trim();
+        const telefono = document.getElementById("providerPhone").value.trim();
+        const email = document.getElementById("providerEmail").value.trim();
+        if (!nombre || !contacto) {
+          showToast("Completa nombre y contacto", "warning");
+          return;
+        }
+
+        if (isNew) {
+          db.providers.push({ id: uid("prov"), nombre, contacto, telefono, email });
+          showToast("Proveedor creado", "success");
+          saveDB();
+        } else {
+          provider.nombre = nombre;
+          provider.contacto = contacto;
+          provider.telefono = telefono;
+          provider.email = email;
+          showToast("Proveedor actualizado", "success");
+          saveDB();
+        }
+
+        cerrarModal();
+        renderView();
+      });
+    }
+
+    function showEditCustomerModal(customerId) {
+      const customer = customerId ? db.customers.find(c => c.id === customerId) : null;
+      const isNew = !customer;
+      const title = isNew ? "Nuevo cliente" : `Editar ${customer.nombre}`;
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `
+        <div class="modal-header">
+          <h3 class="text-lg font-bold">${title}</h3>
+        </div>
+        <div class="modal-body">
+          <form id="customerForm" class="space-y-3">
+            <input type="hidden" id="customerId" value="${customer?.id || ""}" />
+            <div>
+              <label class="block text-sm font-semibold mb-1">Nombre</label>
+              <input type="text" id="customerName" value="${customer?.nombre || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-1">Documento</label>
+              <input type="text" id="customerDoc" value="${customer?.documento || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label class="block text-sm font-semibold mb-1">Teléfono</label>
+                <input type="text" id="customerPhone" value="${customer?.telefono || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" />
+              </div>
+              <div>
+                <label class="block text-sm font-semibold mb-1">Correo</label>
+                <input type="email" id="customerEmail" value="${customer?.correo || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" />
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btnCancelCustomer" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cancelar</button>
+          <button type="submit" form="customerForm" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Guardar</button>
+        </div>
+      `;
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("modalBackdrop").classList.add("active");
+
+      document.getElementById("btnCancelCustomer").addEventListener("click", cerrarModal);
+      document.getElementById("customerForm").addEventListener("submit", e => {
+        e.preventDefault();
+        const nombre = document.getElementById("customerName").value.trim();
+        const documento = document.getElementById("customerDoc").value.trim();
+        const telefono = document.getElementById("customerPhone").value.trim();
+        const correo = document.getElementById("customerEmail").value.trim();
+        if (!nombre || !documento) {
+          showToast("Completa nombre y documento", "warning");
+          return;
+        }
+
+        if (isNew) {
+          db.customers.push({ id: uid("cli"), nombre, documento, telefono, correo });
+          showToast("Cliente creado", "success");
+          saveDB();
+        } else {
+          customer.nombre = nombre;
+          customer.documento = documento;
+          customer.telefono = telefono;
+          customer.correo = correo;
+          showToast("Cliente actualizado", "success");
+          saveDB();
+        }
+
+        cerrarModal();
+        renderView();
+      });
+    }
+
+    function renderClientes(st, search = "") {
+      const criteria = search.toLowerCase();
+      const filtered = st.customers.filter(c => !criteria || `${c.nombre} ${c.documento} ${c.telefono || ""} ${c.correo || ""}`.toLowerCase().includes(criteria));
+      const rows = filtered.map(c => {
+        const ventas = st.sales.filter(s => s.clienteId === c.id).length;
+        const totalComprado = st.sales.filter(s => s.clienteId === c.id).reduce((sum, s) => sum + s.total, 0);
+        return `
+          <tr class="border-b text-sm hover:bg-slate-50">
+            <td class="px-3 py-2 font-semibold">${c.nombre}</td>
+            <td class="px-3 py-2">${c.documento}</td>
+            <td class="px-3 py-2">${c.telefono || "---"}</td>
+            <td class="px-3 py-2">${c.correo || "---"}</td>
+            <td class="px-3 py-2 text-right">${ventas}</td>
+            <td class="px-3 py-2 text-right">${formatCurrency(totalComprado)}</td>
+            <td class="px-3 py-2 text-center"><button type="button" onclick="showEditCustomerModal('${c.id}')" class="text-slate-700 hover:text-slate-900 text-sm font-semibold">✏️ Editar</button></td>
+          </tr>
+        `;
+      }).join("");
+
+      return `
+        <div class="view-card mb-4">
+          <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 class="text-lg font-bold">👥 Clientes</h3>
+              <p class="text-sm text-slate-500">Alta, edición y seguimiento comercial</p>
+            </div>
+            <button type="button" onclick="showEditCustomerModal()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ Nuevo cliente</button>
+          </div>
+        </div>
+        <div class="view-card">
+          <div class="overflow-x-auto rounded-xl border bg-white">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 text-xs uppercase border-b">
+                <tr><th class="px-3 py-2 text-left">Nombre</th><th class="px-3 py-2 text-left">Documento</th><th class="px-3 py-2 text-left">Teléfono</th><th class="px-3 py-2 text-left">Correo</th><th class="px-3 py-2 text-right">Ventas</th><th class="px-3 py-2 text-right">Total comprado</th><th class="px-3 py-2 text-center">Acción</th></tr>
+              </thead>
+              <tbody>${rows || '<tr><td colspan="7" class="px-3 py-4 text-center text-slate-500">Sin clientes</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function showEditProductModal(productId) {
+      const product = productId ? db.products.find(p => p.id === productId) : null;
+      const isNew = !product;
+      const title = isNew ? "Nuevo producto" : `Editar ${product.nombre}`;
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `
+        <div class="modal-header">
+          <h3 class="text-lg font-bold">${title}</h3>
+        </div>
+        <div class="modal-body">
+          <form id="productForm" class="space-y-3">
+          <input type="hidden" id="productId" value="${product?.id || ""}" />
+          <div>
+            <label class="block text-sm font-semibold mb-1">Nombre</label>
+            <input type="text" id="productName" value="${product?.nombre || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-semibold mb-1">Categoría</label>
+              <select id="productCategory" class="w-full px-3 py-2 border rounded-lg text-sm" required>
+                <option value="">-- Seleccionar --</option>
+                <option value="Capilar" ${product?.categoria === "Capilar" ? "selected" : ""}>Capilar</option>
+                <option value="Maquillaje" ${product?.categoria === "Maquillaje" ? "selected" : ""}>Maquillaje</option>
+                <option value="Corporal" ${product?.categoria === "Corporal" ? "selected" : ""}>Corporal</option>
+                <option value="Skincare" ${product?.categoria === "Skincare" ? "selected" : ""}>Skincare</option>
+                <option value="Procedimientos" ${product?.categoria === "Procedimientos" ? "selected" : ""}>Procedimientos</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-1">Marca</label>
+              <input type="text" id="productBrand" value="${product?.marca || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-semibold mb-1">Precio compra</label>
+              <input type="number" id="productPriceBuy" value="${product?.precioCompra || ""}" min="0" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-1">Precio venta</label>
+              <input type="number" id="productPriceSell" value="${product?.precioVentaDetal || ""}" min="0" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-semibold mb-1">Stock actual</label>
+              <input type="number" id="productStock" value="${product?.stockActual ?? 0}" min="0" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-1">Stock mínimo</label>
+              <input type="number" id="productMinStock" value="${product?.stockMinimo ?? 8}" min="0" class="w-full px-3 py-2 border rounded-lg text-sm" required />
+            </div>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-semibold mb-1">Proveedor</label>
+              <select id="productProvider" class="w-full px-3 py-2 border rounded-lg text-sm" required>
+                ${db.providers.map(pr => `<option value="${pr.id}" ${product?.proveedor === pr.id ? "selected" : ""}>${pr.nombre}</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-1">Imagen del producto</label>
+              <div class="flex gap-2">
+                <input type="file" id="productImageUpload" accept="image/*" class="flex-1 px-3 py-2 border rounded-lg text-sm" />
+              </div>
+              <p class="text-xs text-slate-500 mt-1">Al guardar, la imagen se copiará a la carpeta <strong>images</strong> del proyecto.</p>
+              <input type="hidden" id="productImage" value="${product?.imagen || ""}" />
+              ${product?.imagen ? `<p class="text-xs text-slate-500 mt-2">Imagen actual: ${product.imagen.startsWith("data:image/") ? "embebida (reemplázala para dejarla en images/)" : product.imagen}</p>` : ""}
+              <div id="imagePreview" class="mt-2">${product?.imagen ? `<img src="${product.imagen}" alt="preview">` : ""}</div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button type="button" id="btnCancelProduct" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cancelar</button>
+          <button type="submit" form="productForm" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Guardar</button>
+        </div>
+      `;
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("modalBackdrop").classList.add("active");
+
+      document.getElementById("btnCancelProduct").addEventListener("click", () => {
+        document.getElementById("modalBackdrop").classList.remove("active");
+      });
+
+      let pendingImageFile = null;
+      const imageUploadInput = document.getElementById("productImageUpload");
+      if (imageUploadInput) {
+        imageUploadInput.addEventListener("change", (e) => {
+          const file = e.target.files[0];
+          if (file) {
+            pendingImageFile = file;
+            const previewUrl = URL.createObjectURL(file);
+            const preview = document.getElementById("imagePreview");
+            preview.innerHTML = `<img src="${previewUrl}" alt="preview" style="max-width: 100px; border-radius: 8px;">`;
+          }
+        });
+      }
+
+      document.getElementById("productForm").addEventListener("submit", async e => {
+        e.preventDefault();
+        const name = document.getElementById("productName").value.trim();
+        const category = document.getElementById("productCategory").value;
+        const brand = document.getElementById("productBrand").value.trim();
+        const priceBuy = Number(document.getElementById("productPriceBuy").value);
+        const priceSell = Number(document.getElementById("productPriceSell").value);
+        const stock = Number(document.getElementById("productStock").value);
+        const stockMinimo = Number(document.getElementById("productMinStock").value);
+        const providerId = document.getElementById("productProvider").value;
+        let image = document.getElementById("productImage").value.trim();
+
+        if (pendingImageFile) {
+          try {
+            image = await uploadProductImage(pendingImageFile);
+            document.getElementById("productImage").value = image;
+          } catch (err) {
+            console.error("Error subiendo imagen:", err);
+            showToast(`No se pudo subir la imagen: ${err.message}`, "danger");
+            return;
+          }
+        }
+
+        if (image.startsWith("data:image/")) {
+          showToast("Selecciona una imagen para guardarla en la carpeta images.", "warning");
+          return;
+        }
+        
+        // Si no hay imagen definida, usar un placeholder ya ubicado en images.
+        if (!image) {
+          image = "images/shampoo_cebolla.jpg";
+        }
+
+        if (!name || !category || !brand || Number.isNaN(priceBuy) || Number.isNaN(priceSell)) {
+          showToast("Completa los campos obligatorios", "warning");
+          return;
+        }
+
+        if (isNew) {
+          db.products.push({
+            id: uid("prod"),
+            nombre: name,
+            categoria: category,
+            marca: brand,
+            proveedor: providerId,
+            imagen: image,
+            precioCompra: priceBuy,
+            precioVentaDetal: priceSell,
+            stockActual: stock,
+            stockMinimo,
+            fechaIngreso: today
+          });
+          showToast("Producto creado", "success");
+          saveDB();
+        } else {
+          product.nombre = name;
+          product.categoria = category;
+          product.marca = brand;
+          product.proveedor = providerId;
+          product.imagen = image;
+          product.precioCompra = priceBuy;
+          product.precioVentaDetal = priceSell;
+          product.stockActual = stock;
+          product.stockMinimo = stockMinimo;
+          showToast("Producto actualizado", "success");
+          saveDB();
+        }
+
+        document.getElementById("modalBackdrop").classList.remove("active");
+        renderView();
+      });
+    }
+
+    function renderServicios(st, search = "") {
+      const servicesByName = new Map();
+      (st.services || []).forEach(service => {
+        const key = service.nombre.trim().toLocaleLowerCase("es-CO");
+        const current = servicesByName.get(key);
+        if (!current || (current.activo === false && service.activo !== false)) servicesByName.set(key, service);
+      });
+      const services = [...servicesByName.values()].filter(service => service.nombre.toLowerCase().includes(search.toLowerCase()));
+      const rows = services.map(service => `<tr class="border-b text-sm"><td class="px-3 py-2 font-semibold">${escapeHtml(service.nombre)}</td><td class="px-3 py-2 text-right">${service.precioSugerido == null ? "Variable" : formatCurrency(service.precioSugerido)}</td><td class="px-3 py-2 text-right">${service.costoSugerido == null ? "Sin registrar" : formatCurrency(service.costoSugerido)}</td><td class="px-3 py-2">${service.activo !== false ? "Activo" : "Inactivo"}</td><td class="px-3 py-2"><button type="button" data-id="${escapeHtml(service.id)}" onclick="showEditServiceModal(this.dataset.id)" class="font-semibold text-slate-700">Editar</button></td></tr>`).join("");
+      const historyRows = st.sales.flatMap(sale => sale.items.filter(item => item.tipo === "servicio").map(item => {
+        const customer = sale.clienteId ? st.customers.find(entry => entry.id === sale.clienteId) : null;
+        return { sale, item, customer };
+      })).filter(({ sale, item, customer }) => !search || `${sale.id} ${customer?.nombre || "Consumidor"} ${item.nombre} ${item.observaciones || ""} ${sale.metodoPago || ""}`.toLowerCase().includes(search.toLowerCase())).sort((left, right) => new Date(right.sale.fecha) - new Date(left.sale.fecha));
+      const historyTableRows = historyRows.map(({ sale, item, customer }) => `<tr class="border-b text-sm"><td class="px-3 py-2 whitespace-nowrap">${formatDate(sale.fecha)}</td><td class="px-3 py-2"><button type="button" data-sale-id="${escapeHtml(sale.id)}" onclick="verFactura(this.dataset.saleId)" class="font-semibold text-teal-700">${escapeHtml(sale.id)}</button></td><td class="px-3 py-2">${escapeHtml(customer?.nombre || "Consumidor")}</td><td class="px-3 py-2 font-semibold">${escapeHtml(item.nombre)}</td><td class="px-3 py-2 text-right">${item.cantidad}</td><td class="px-3 py-2 text-right">${formatCurrency(item.precio * item.cantidad)}</td><td class="px-3 py-2">${escapeHtml(item.observaciones || "-")}</td><td class="px-3 py-2">${escapeHtml(sale.metodoPago || "-")}</td></tr>`).join("");
+      const tabs = `<div role="tablist" aria-label="Sección de servicios" class="flex flex-wrap border-b mb-4"><button type="button" role="tab" aria-selected="${appState.servicesTab === "catalogo"}" onclick="setServicesTab('catalogo')" class="px-4 py-2 text-sm font-semibold ${appState.servicesTab === "catalogo" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Cat&aacute;logo</button><button type="button" role="tab" aria-selected="${appState.servicesTab === "historial"}" onclick="setServicesTab('historial')" class="px-4 py-2 text-sm font-semibold ${appState.servicesTab === "historial" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Historial de realizados <span class="ml-1 text-xs">${historyRows.length}</span></button></div>`;
+      const content = appState.servicesTab === "historial"
+        ? `<div class="overflow-x-auto border rounded-lg"><table class="min-w-full"><thead class="bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Ticket</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-left">Procedimiento</th><th class="px-3 py-2 text-right">Cant.</th><th class="px-3 py-2 text-right">Valor</th><th class="px-3 py-2 text-left">Observaciones</th><th class="px-3 py-2 text-left">Pago</th></tr></thead><tbody>${historyTableRows || '<tr><td colspan="8" class="px-3 py-6 text-center text-sm text-slate-500">A&uacute;n no hay servicios realizados</td></tr>'}</tbody></table></div>`
+        : `<div class="flex flex-wrap items-center justify-between gap-3 mb-4"><div><h3 class="text-lg font-bold">Cat&aacute;logo de servicios</h3><p class="text-sm text-slate-500">Agrega procedimientos; el precio se acuerda en cada venta.</p></div><button type="button" onclick="showEditServiceModal()" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ Nuevo servicio</button></div><div class="overflow-x-auto border rounded-lg"><table class="min-w-full"><thead class="bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Procedimiento</th><th class="px-3 py-2 text-right">Precio sugerido</th><th class="px-3 py-2 text-right">Costo sugerido</th><th class="px-3 py-2 text-left">Estado</th><th class="px-3 py-2 text-left">Acci&oacute;n</th></tr></thead><tbody>${rows || '<tr><td colspan="5" class="px-3 py-6 text-center text-sm text-slate-500">Sin servicios registrados</td></tr>'}</tbody></table></div>`;
+      return `<div class="view-card">${tabs}${content}</div>`;
+    }
+
+    function setServicesTab(tab) {
+      if (!["catalogo", "historial"].includes(tab)) return;
+      appState.servicesTab = tab;
+      renderView();
+    }
+
+    function showServiceForm(title, fields, submitLabel, onSubmit) {
+      const form = document.createElement("form");
+      form.className = "modal-content";
+      form.innerHTML = `<div class="modal-header"><h3 class="text-lg font-bold">${escapeHtml(title)}</h3></div><div class="modal-body space-y-3">${fields}</div><div class="modal-footer"><button type="button" onclick="cerrarModal()" class="flex-1 border rounded-lg px-3 py-2">Cancelar</button><button type="submit" class="flex-1 bg-slate-900 text-white rounded-lg px-3 py-2">${submitLabel}</button></div>`;
+      form.addEventListener("submit", async event => {
+        event.preventDefault();
+        const button = form.querySelector('[type="submit"]');
+        button.disabled = true;
+        try { await onSubmit(form); } finally { button.disabled = false; }
+      });
+      document.getElementById("modalContent").replaceChildren(form);
+      document.getElementById("modalBackdrop").classList.add("active");
+    }
+
+    function showEditServiceModal(serviceId) {
+      const service = (db.services || []).find(entry => entry.id === serviceId);
+      showServiceForm(service ? "Editar servicio" : "Nuevo servicio", `
+        <div><label for="serviceName" class="block text-sm font-semibold mb-1">Procedimiento</label><input id="serviceName" name="nombre" value="${escapeHtml(service?.nombre)}" maxlength="150" required class="w-full border rounded-lg px-3 py-2" /></div>
+        <div><label for="servicePrice" class="block text-sm font-semibold mb-1">Precio sugerido (opcional)</label><input id="servicePrice" name="precio" type="number" min="0" max="9999999999.99" step="0.01" value="${service?.precioSugerido ?? ""}" class="w-full border rounded-lg px-3 py-2" /></div>
+        <div><label for="serviceCost" class="block text-sm font-semibold mb-1">Costo directo sugerido (opcional)</label><input id="serviceCost" name="costo" type="number" min="0" max="9999999999.99" step="0.01" value="${service?.costoSugerido ?? ""}" class="w-full border rounded-lg px-3 py-2" /></div>
+        <label class="flex items-center gap-2 text-sm"><input name="activo" type="checkbox" ${service?.activo !== false ? "checked" : ""} />Activo</label>
+      `, "Guardar", async form => {
+        const nombre = form.elements.nombre.value.trim();
+        if (!nombre) return;
+        const previous = db.services || [];
+        const updated = { id: service?.id || uid("service"), nombre, precioSugerido: form.elements.precio.value === "" ? null : Number(form.elements.precio.value), costoSugerido: form.elements.costo.value === "" ? null : Number(form.elements.costo.value), activo: form.elements.activo.checked };
+        db.services = service ? previous.map(entry => entry.id === service.id ? updated : entry) : [...previous, updated];
+        if (!await saveDB()) { db.services = previous; return; }
+        cerrarModal();
+        showToast("Servicio guardado", "success");
+      });
+    }
+
+    function showServiceSaleModal(serviceId, cartIndex = null) {
+      const service = (db.services || []).find(entry => entry.id === serviceId && entry.activo !== false);
+      const item = cartIndex == null ? null : appState.cart[cartIndex];
+      if (!service && !item) return;
+      showServiceForm(item?.nombre || service.nombre, `
+        <div><label for="serviceSalePrice" class="block text-sm font-semibold mb-1">Precio acordado</label><input id="serviceSalePrice" name="precio" type="number" min="0.01" max="9999999999.99" step="0.01" value="${item?.precio ?? service?.precioSugerido ?? ""}" required class="w-full border rounded-lg px-3 py-2" /></div>
+        <div><label for="serviceSaleCost" class="block text-sm font-semibold mb-1">Costo directo (opcional)</label><input id="serviceSaleCost" name="costo" type="number" min="0" max="9999999999.99" step="0.01" value="${item ? item.costo ?? "" : service?.costoSugerido ?? ""}" class="w-full border rounded-lg px-3 py-2" /></div>
+        <div><label for="serviceSaleNotes" class="block text-sm font-semibold mb-1">Observaciones</label><textarea id="serviceSaleNotes" name="observaciones" maxlength="500" rows="3" class="w-full border rounded-lg px-3 py-2">${escapeHtml(item?.observaciones)}</textarea></div>
+      `, item ? "Actualizar" : "Agregar al carrito", form => {
+        const entry = { tipo: "servicio", serviceId: item?.serviceId || service.id, nombre: item?.nombre || service.nombre, cantidad: item?.cantidad || 1, precio: Number(form.elements.precio.value), costo: form.elements.costo.value === "" ? null : Number(form.elements.costo.value), observaciones: form.elements.observaciones.value.trim() };
+        if (cartIndex == null) appState.cart.push(entry);
+        else appState.cart[cartIndex] = entry;
+        cerrarModal();
+      });
+    }
+
+    function onPosServiceSelected(serviceId) {
+      appState.selectedPosServiceId = serviceId;
+      const service = (db.services || []).find(entry => entry.id === serviceId && entry.activo !== false);
+      const priceInput = document.getElementById("posServicePrice");
+      const costInput = document.getElementById("posServiceCost");
+      if (priceInput) priceInput.value = service?.precioSugerido ?? "";
+      if (costInput) costInput.value = service?.costoSugerido ?? "";
+    }
+
+    function addSelectedServiceToCart() {
+      const service = (db.services || []).find(entry => entry.id === appState.selectedPosServiceId && entry.activo !== false);
+      const priceInput = document.getElementById("posServicePrice");
+      const costInput = document.getElementById("posServiceCost");
+      const notesInput = document.getElementById("posServiceNotes");
+      const precio = Number(priceInput?.value);
+      const costo = costInput?.value === "" ? null : Number(costInput?.value);
+      if (!service) return showToast("Selecciona un servicio", "warning");
+      if (!Number.isFinite(precio) || precio <= 0) return showToast("Ingresa un precio mayor que cero", "warning");
+      if (costo != null && (!Number.isFinite(costo) || costo < 0)) return showToast("Ingresa un costo válido", "warning");
+      appState.cart.push({ tipo: "servicio", serviceId: service.id, nombre: service.nombre, cantidad: 1, precio, costo, observaciones: notesInput?.value.trim() || "" });
+      appState.selectedPosServiceId = "";
+      updateCartBadge();
+      renderView();
+    }
+
+    function setPosTab(tab) {
+      if (!["productos", "servicios"].includes(tab)) return;
+      appState.posTab = tab;
+      renderView();
+    }
+
+    function renderVentas(st, search = "") {
+      const criteria = search.toLowerCase();
+      const filtered = st.sales.filter(s => !criteria || s.id.toLowerCase().includes(criteria));
+      const rows = filtered.slice(-20).reverse().map(s => {
+        const customer = s.clienteId ? st.customers.find(c => c.id === s.clienteId) : null;
+        return `<tr class="border-b text-sm"><td class="px-3 py-2">${s.id}</td><td class="px-3 py-2">${formatDate(s.fecha)}</td><td class="px-3 py-2">${customer?.nombre || "Contado"}</td><td class="px-3 py-2 text-right">${s.items.length}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(s.total)}</td><td class="px-3 py-2 text-center"><button onclick="verFactura('${s.id}')" class="text-slate-600 hover:text-slate-900 text-sm">🧾</button></td></tr>`;
+      }).join("");
+      return `<div class="view-card"><h3 class="text-lg font-bold mb-4">💳 Historial de ventas</h3><div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="px-3 py-2 text-left">Ticket</th><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2">Items</th><th class="px-3 py-2 text-right">Total</th><th class="px-3 py-2">Ver</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+    }
+
+    function renderPOS(st, search = "") {
+      const criteria = search.toLowerCase();
+      const brands = [...new Set(st.products.map(p => (p.marca || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const categories = [...new Set(st.products.map(p => (p.categoria || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const selectedBrand = brands.includes(appState.posBrandFilter) ? appState.posBrandFilter : "";
+      const selectedCategory = categories.includes(appState.posCategoryFilter) ? appState.posCategoryFilter : "";
+      if (selectedBrand !== appState.posBrandFilter) {
+        appState.posBrandFilter = selectedBrand;
+      }
+      if (selectedCategory !== appState.posCategoryFilter) {
+        appState.posCategoryFilter = selectedCategory;
+      }
+
+      const filtered = st.products.filter(p => {
+        const matchesSearch = !criteria || p.nombre.toLowerCase().includes(criteria);
+        const matchesBrand = !selectedBrand || (p.marca || "").trim() === selectedBrand;
+        const matchesCategory = !selectedCategory || (p.categoria || "").trim() === selectedCategory;
+        return matchesSearch && matchesBrand && matchesCategory;
+      });
+      const cards = filtered.map(p => {
+        const stock = p.stockActual > 20 ? "bg-emerald-100 text-emerald-700" : p.stockActual > 10 ? "bg-amber-100 text-amber-700" : p.stockActual > 5 ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700";
+        return `<div class="product-card border rounded-lg p-3 flex flex-col h-full">
+          <img src="${p.imagen}" alt="${p.nombre}" class="w-full h-32 object-cover rounded-lg mb-2" />
+          <h4 class="font-semibold text-sm">${p.nombre}</h4>
+          <p class="text-xs text-slate-500">${p.marca}</p>
+          <p class="text-lg font-bold text-slate-900 mt-1">${formatCurrency(p.precioVentaDetal)}</p>
+          <span class="stock-badge ${stock} text-xs inline-block mt-1">Stock: ${p.stockActual}</span>
+          <div class="mt-auto pt-3 space-y-2">
+            <div class="flex items-center gap-2">
+              <button onclick="changeQuantity('${p.id}', -1)" class="w-8 h-8 bg-slate-200 hover:bg-slate-300 rounded font-bold text-sm">−</button>
+              <input type="number" id="qty-${p.id}" value="1" min="1" max="${p.stockActual}" class="flex-1 px-2 py-1 border border-slate-300 rounded text-center text-sm font-semibold" />
+              <button onclick="changeQuantity('${p.id}', 1)" class="w-8 h-8 bg-slate-200 hover:bg-slate-300 rounded font-bold text-sm">+</button>
+            </div>
+            <button onclick="addToCartQty('${p.id}', '${p.nombre}', ${p.precioVentaDetal})" class="w-full bg-slate-900 text-white px-2 py-2 rounded font-semibold text-sm hover:bg-slate-800">Agregar al carrito</button>
+          </div>
+        </div>`;
+      }).join("");
+
+      const cartTotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
+
+      const cartItems = appState.cart.length > 0 ? appState.cart.map((item, idx) => `
+        <div class="bg-white p-3 rounded-lg border space-y-2">
+          <div>
+            <p class="font-semibold text-sm break-words">${escapeHtml(item.nombre)}</p>
+            <p class="text-xs text-slate-500">${formatCurrency(item.precio)} c/u</p>
+            ${item.tipo === "servicio" ? `<p class="text-xs text-slate-500 break-words">Servicio${item.observaciones ? `: ${escapeHtml(item.observaciones)}` : ""}</p><button type="button" onclick="showServiceSaleModal(null, ${idx})" class="text-xs font-semibold text-teal-700">Editar precio y detalles</button>` : ""}
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="changeCartQuantity(${idx}, -1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold">−</button>
+            <input type="number" id="cart-qty-${idx}" value="${item.cantidad}" min="1" class="flex-1 px-2 py-1 border border-slate-300 rounded text-center text-xs font-semibold" onchange="updateCartQuantity(${idx}, this.value)" />
+            <button onclick="changeCartQuantity(${idx}, 1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold">+</button>
+          </div>
+          <div class="flex justify-between items-center">
+            <p class="font-bold text-sm">${formatCurrency(item.cantidad * item.precio)}</p>
+            <button onclick="removeFromCart(${idx})" class="text-xs text-red-600 hover:text-red-700 font-semibold">✕</button>
+          </div>
+        </div>
+      `).join("") : '<p class="text-sm text-slate-400 text-center py-4">Carrito vacío</p>';
+
+      const brandOptions = [
+        '<option value="">Todas las marcas</option>',
+        ...brands.map(brand => `<option value="${brand}" ${brand === selectedBrand ? "selected" : ""}>${brand}</option>`)
+      ].join("");
+
+      const categoryOptions = [
+        '<option value="">Todas las categorías</option>',
+        ...categories.map(category => `<option value="${category}" ${category === selectedCategory ? "selected" : ""}>${category}</option>`)
+      ].join("");
+
+      const activeFilters = [
+        selectedBrand ? `marca ${selectedBrand}` : "",
+        selectedCategory ? `categoría ${selectedCategory}` : ""
+      ].filter(Boolean);
+      const emptyMessage = activeFilters.length > 0
+        ? `No hay productos para ${activeFilters.join(" y ")}.`
+        : "No hay productos disponibles con ese criterio.";
+      const serviceOptions = (st.services || []).filter(service => service.activo !== false && service.nombre.toLowerCase().includes(criteria)).map(service => `<option value="${escapeHtml(service.id)}" data-price="${service.precioSugerido ?? ""}" data-cost="${service.costoSugerido ?? ""}" ${service.id === appState.selectedPosServiceId ? "selected" : ""}>${escapeHtml(service.nombre)}${service.precioSugerido == null ? " · Precio variable" : ` · ${formatCurrency(service.precioSugerido)}`}</option>`).join("");
+      const tabs = `<div role="tablist" aria-label="Tipo de venta" class="flex border-b mb-4"><button type="button" role="tab" aria-selected="${appState.posTab === "productos"}" onclick="setPosTab('productos')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "productos" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Productos</button><button type="button" role="tab" aria-selected="${appState.posTab === "servicios"}" onclick="setPosTab('servicios')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "servicios" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Servicios</button></div>`;
+
+      return `
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div class="xl:col-span-2"><div class="view-card">${tabs}${appState.posTab === "servicios" ? `<div class="flex flex-wrap justify-between items-center gap-3 mb-4"><div><h3 class="text-lg font-bold">Agregar servicio</h3><p class="text-sm text-slate-500">Elige un procedimiento y registra su valor acordado.</p></div><button type="button" onclick="cambiarRuta('servicios')" class="text-sm font-semibold text-teal-700">Administrar cat&aacute;logo</button></div>${serviceOptions ? `<div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div class="md:col-span-2"><label for="posServiceSelect" class="block text-xs font-semibold text-slate-500 mb-1">Procedimiento</label><select id="posServiceSelect" onchange="onPosServiceSelected(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Selecciona un servicio</option>${serviceOptions}</select></div><div><label for="posServicePrice" class="block text-xs font-semibold text-slate-500 mb-1">Valor del servicio</label><input id="posServicePrice" type="number" min="0.01" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.precioSugerido ?? ""}" placeholder="Ingresa el valor acordado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div><label for="posServiceCost" class="block text-xs font-semibold text-slate-500 mb-1">Costo directo (opcional)</label><input id="posServiceCost" type="number" min="0" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.costoSugerido ?? ""}" placeholder="Costo de insumos" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><label for="posServiceNotes" class="block text-xs font-semibold text-slate-500 mb-1">Observaciones del procedimiento (opcional)</label><input id="posServiceNotes" type="text" maxlength="500" placeholder="Ej.: cabello largo, tono aplicado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><button type="button" onclick="addSelectedServiceToCart()" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Agregar servicio al carrito</button></div></div>` : '<p class="text-sm text-slate-500">No hay servicios disponibles con ese criterio.</p>'}` : `<div class="flex flex-col gap-3 mb-3"><h3 class="text-lg font-bold">🛍️ Productos disponibles</h3><div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div><label for="posBrandFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por marca</label><select id="posBrandFilter" onchange="setPosBrandFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${brandOptions}</select></div><div><label for="posCategoryFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por categoría</label><select id="posCategoryFilter" onchange="setPosCategoryFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${categoryOptions}</select></div></div></div><div class="grid grid-cols-2 md:grid-cols-3 gap-3">${cards || `<div class="col-span-2 md:col-span-3 rounded-lg border border-dashed p-4 text-sm text-slate-500 text-center">${emptyMessage}</div>`}</div>`}</div></div>
+          <div><div class="view-card sticky top-4"><h3 class="text-lg font-bold mb-3">🛒 Carrito</h3><div class="bg-slate-50 rounded-lg p-3 mb-3 max-h-64 overflow-y-auto space-y-2">${cartItems}</div><div class="bg-blue-50 p-3 rounded-lg space-y-1 mb-3 text-sm"><div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(cartTotal)}</span></div><div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">Total:</span><span class="font-bold text-lg text-slate-900">${formatCurrency(cartTotal)}</span></div></div><button onclick="procesarVenta()" class="w-full rounded-lg bg-slate-900 text-white px-4 py-3 font-semibold" ${appState.cart.length === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>Procesar venta</button></div></div>
+        </div>
+      `;
+    }
+
+    function renderReportes(st, search = "") {
+      const salesFiltered = filterSalesByPeriod(st.sales, appState.periodo);
+      const metricas = calcularMetricasGenerales(salesFiltered);
+      const topProductos = productosMasVendidos(salesFiltered, 5);
+      const topClientes = clientesMasActivos(salesFiltered, 5);
+      const porCategoria = ventasPorCategoria(salesFiltered);
+      const ventasDia = ventasPorDia(salesFiltered);
+      const margenPotencial = st.products.reduce((sum, p) => sum + ((p.stockActual * p.precioVentaDetal) - (p.stockActual * p.precioCompra)), 0);
+      const serviceSummary = new Map();
+      salesFiltered.flatMap(sale => sale.items).filter(item => item.tipo === "servicio").forEach(item => {
+        const key = JSON.stringify([item.serviceId, item.nombre]);
+        const summary = serviceSummary.get(key) || { nombre: item.nombre, cantidad: 0, ingresos: 0, ganancia: 0, sinCosto: 0 };
+        summary.cantidad += item.cantidad;
+        summary.ingresos += item.cantidad * item.precio;
+        if (item.costo == null) summary.sinCosto += item.cantidad;
+        else summary.ganancia += item.cantidad * (item.precio - item.costo);
+        serviceSummary.set(key, summary);
+      });
+      const serviceRows = [...serviceSummary.values()].map(service => `<tr class="border-b text-sm"><td class="px-3 py-2 font-semibold">${escapeHtml(service.nombre)}</td><td class="px-3 py-2 text-right">${service.cantidad}</td><td class="px-3 py-2 text-right">${formatCurrency(service.ingresos)}</td><td class="px-3 py-2 text-right">${formatCurrency(service.ganancia)}</td><td class="px-3 py-2 text-right">${service.sinCosto}</td></tr>`).join("");
+
+      const productRows = topProductos.map((p, idx) => {
+        const maxVentas = Math.max(...topProductos.map(pr => pr.cantidad), 1);
+        const barWidth = (p.cantidad / maxVentas) * 100;
+        return `
+          <div class="flex items-center gap-3 mb-3">
+            <span class="rank-badge rank-${idx + 1}">${idx + 1}</span>
+            <div class="flex-1">
+              <div class="flex justify-between mb-1"><p class="font-semibold text-sm">${p.nombre}</p><span class="text-xs font-bold">${p.cantidad} units</span></div>
+              <div class="w-full bg-slate-100 rounded-full h-2"><div class="chart-bar" style="width:${barWidth}%"></div></div>
+              <div class="flex justify-between text-xs text-slate-500 mt-1"><span>${formatCurrency(p.ventas)}</span><span class="metric-up">${p.margen.toFixed(1)}% margen</span></div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      const clienteRows = topClientes.map((c, idx) => `<tr class="border-b text-sm"><td class="px-3 py-2"><span class="rank-badge rank-${idx + 1}">${idx + 1}</span></td><td class="px-3 py-2 font-semibold">${c.nombre}</td><td class="px-3 py-2 text-right">${c.compras}</td><td class="px-3 py-2 text-right">${formatCurrency(c.total)}</td><td class="px-3 py-2 text-right">${formatCurrency(c.promedioCompra)}</td></tr>`).join("");
+
+      const catRows = porCategoria.map(c => `<tr class="border-b text-sm"><td class="px-3 py-2 font-semibold">${c.categoria}</td><td class="px-3 py-2 text-right">${c.cantidad}</td><td class="px-3 py-2 text-right">${formatCurrency(c.ventas)}</td><td class="px-3 py-2 text-right">${formatCurrency(c.costo)}</td><td class="px-3 py-2 text-right metric-up">${formatCurrency(c.ganancia)}</td><td class="px-3 py-2 text-right">${c.margen.toFixed(1)}%</td></tr>`).join("");
+
+      const trendRows = ventasDia.map(d => `<div class="flex items-center gap-3 mb-3"><p class="w-24 text-xs font-semibold">${formatDate(`${d.fecha}T00:00:00`)}</p><div class="flex-1"><div class="bg-slate-100 rounded-full h-3"><div class="chart-bar" style="width:${Math.max(...ventasDia.map(v => v.total), 1) === 0 ? 0 : (d.total / Math.max(...ventasDia.map(v => v.total), 1)) * 100}%"></div></div></div><p class="w-28 text-right text-sm font-bold">${formatCurrency(d.total)}</p></div>`).join("");
+
+      return `
+        ${renderPeriodSelector(st)}
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.totalVentas)}</p><p class="text-xs text-slate-500 mt-1">${metricas.cantVentas} ventas</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">${metricas.serviciosSinCosto ? "Ganancia conocida" : "Ganancia"}</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(metricas.gananciaBruta)}</p>${metricas.serviciosSinCosto ? `<p class="text-xs text-amber-700 mt-1">${metricas.serviciosSinCosto} servicios sin costo registrado</p>` : ""}</div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">${metricas.serviciosSinCosto ? "Margen conocido" : "Margen promedio"}</p><p class="mt-2 text-2xl font-bold">${metricas.margenPromedio.toFixed(1)}%</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Ganancia potencial</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(margenPotencial)}</p><p class="text-xs text-slate-500 mt-1">Inventario actual</p></div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 border-y py-4"><div><p class="text-xs uppercase text-slate-500">Ingresos por productos</p><p class="text-xl font-bold">${formatCurrency(metricas.ingresosProductos)}</p></div><div><p class="text-xs uppercase text-slate-500">Ingresos por servicios</p><p class="text-xl font-bold">${formatCurrency(metricas.ingresosServicios)}</p></div></div>
+        <div><h3 class="text-lg font-bold mb-3">Servicios del per&iacute;odo</h3><div class="overflow-x-auto border rounded-lg"><table class="min-w-full"><thead class="bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Procedimiento</th><th class="px-3 py-2 text-right">Cantidad</th><th class="px-3 py-2 text-right">Ingresos</th><th class="px-3 py-2 text-right">Ganancia conocida</th><th class="px-3 py-2 text-right">Sin costo registrado</th></tr></thead><tbody>${serviceRows || '<tr><td colspan="5" class="px-3 py-4 text-center text-sm text-slate-500">Sin servicios en el per&iacute;odo</td></tr>'}</tbody></table></div></div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="view-card"><h3 class="text-lg font-bold mb-4">🏆 Top 5 productos</h3><div>${productRows}</div></div>
+          <div class="view-card"><h3 class="text-lg font-bold mb-4">👥 Top 5 clientes</h3><div class="overflow-x-auto rounded-lg border"><table class="min-w-full text-sm"><thead class="bg-slate-50 border-b"><tr><th class="px-3 py-2 text-left">#</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-right">Compras</th><th class="px-3 py-2 text-right">Total</th><th class="px-3 py-2 text-right">Promedio</th></tr></thead><tbody>${clienteRows}</tbody></table></div></div>
+        </div>
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="view-card"><h3 class="text-lg font-bold mb-4">📊 Ventas por categoría</h3><div class="overflow-x-auto rounded-lg border"><table class="min-w-full text-sm"><thead class="bg-slate-50 border-b"><tr><th class="px-3 py-2 text-left">Categoría</th><th class="px-3 py-2 text-right">Qty</th><th class="px-3 py-2 text-right">Ventas</th><th class="px-3 py-2 text-right">Costo</th><th class="px-3 py-2 text-right">Ganancia</th><th class="px-3 py-2 text-right">Margen</th></tr></thead><tbody>${catRows}</tbody></table></div></div>
+          <div class="view-card"><h3 class="text-lg font-bold mb-4">📈 Ventas por d&iacute;a del per&iacute;odo</h3><div>${trendRows || '<p class="text-sm text-slate-500">Sin datos en el período.</p>'}</div></div>
+        </div>
+      `;
+    }
+
+    function ventasPorCategoria(sales) {
+      const catMap = {};
+      sales.forEach(sale => {
+        sale.items.forEach(item => {
+          if (item.tipo === "servicio") return;
+          const product = db.products.find(p => p.id === item.productId);
+          if (!product) return;
+          if (!catMap[product.categoria]) catMap[product.categoria] = { categoria: product.categoria, cantidad: 0, ventas: 0, costo: 0 };
+          catMap[product.categoria].cantidad += item.cantidad;
+          catMap[product.categoria].ventas += item.cantidad * item.precio;
+          catMap[product.categoria].costo += item.cantidad * product.precioCompra;
+        });
+      });
+      return Object.values(catMap).map(c => ({ ...c, ganancia: c.ventas - c.costo, margen: c.ventas > 0 ? ((c.ventas - c.costo) / c.ventas) * 100 : 0 }));
+    }
+
+    function ventasPorDia(sales) {
+      const dayMap = {};
+      sales.forEach(sale => {
+        const date = new Date(sale.fecha);
+        const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+        if (!dayMap[dateStr]) dayMap[dateStr] = { fecha: dateStr, total: 0, cantidad: 0 };
+        dayMap[dateStr].total += sale.total;
+        dayMap[dateStr].cantidad += 1;
+      });
+      return Object.values(dayMap).sort((a, b) => a.fecha.localeCompare(b.fecha));
+    }
+
+    // ==================== RUTAS ====================
+    const routes = [
+      { categoria: "OPERACIONES", routes: [
+        { id: "pos", label: "Punto de Venta", icon: "🛒", title: "POS - Venta", render: renderPOS },
+        { id: "dashboard", label: "Dashboard", icon: "📊", title: "Dashboard Principal", render: renderDashboard },
+        { id: "ventas", label: "Historial", icon: "💳", title: "Historial de ventas", render: renderVentas }
+      ]},
+      { categoria: "INVENTARIO", routes: [
+        { id: "productos", label: "Productos", icon: "📦", title: "Catálogo de productos", render: renderProductos },
+        { id: "servicios", label: "Servicios", icon: "✂️", title: "Servicios personalizados", render: renderServicios },
+        { id: "proveedores", label: "Proveedores", icon: "🏢", title: "Gestión de proveedores", render: renderProveedores },
+        { id: "clientes", label: "Clientes", icon: "👥", title: "Gestión de clientes", render: renderClientes }
+      ]},
+      { categoria: "REPORTES", routes: [
+        { id: "reportes", label: "Reportes", icon: "📈", title: "Análisis y reportes", render: renderReportes }
+      ]}
+    ];
+
+    function flatRoutes() {
+      return routes.flatMap(cat => cat.routes);
+    }
+
+    function renderView() {
+      const allRoutes = flatRoutes();
+      const route = allRoutes.find(r => r.id === appState.currentRoute) || allRoutes[0];
+      document.getElementById("viewTitle").textContent = route.title;
+      document.getElementById("appView").innerHTML = route.render(db, appState.searchTerm);
+      renderSidebar();
+      updateCartBadge();
+    }
+
+    function renderSidebar() {
+      const nav = document.getElementById("sidebarNav");
+      let html = "";
+      routes.forEach(cat => {
+        html += `<div class="nav-category">${cat.categoria}</div>`;
+        cat.routes.forEach(r => {
+          const active = r.id === appState.currentRoute ? "active" : "";
+          html += `<button onclick="cambiarRuta('${r.id}')" class="nav-link ${active}"><span>${r.icon}</span><span>${r.label}</span></button>`;
+        });
+      });
+      nav.innerHTML = html;
+    }
+
+    function cambiarRuta(rutaId) {
+      appState.currentRoute = rutaId;
+      renderView();
+    }
+
+    function setPosBrandFilter(brand) {
+      appState.posBrandFilter = brand || "";
+      renderView();
+    }
+
+    function setPosCategoryFilter(category) {
+      appState.posCategoryFilter = category || "";
+      renderView();
+    }
+
+    function updateCartBadge() {
+      document.querySelector(".cart-badge").textContent = appState.cart.length;
+    }
+
+    function addToCart(productId, nombre, precio) {
+      const existing = appState.cart.find(c => c.productId === productId);
+      if (existing) {
+        existing.cantidad += 1;
+      } else {
+        appState.cart.push({ productId, nombre, precio, cantidad: 1 });
+      }
+      showToast(`${nombre} agregado al carrito`, "success");
+      updateCartBadge();
+      renderView();
+    }
+
+    function changeQuantity(productId, change) {
+      const input = document.getElementById(`qty-${productId}`);
+      let newValue = parseInt(input.value) + change;
+      const maxStock = parseInt(input.max);
+      if (newValue < 1) newValue = 1;
+      if (newValue > maxStock) newValue = maxStock;
+      input.value = newValue;
+    }
+
+    function addToCartQty(productId, nombre, precio) {
+      const input = document.getElementById(`qty-${productId}`);
+      const cantidad = parseInt(input.value) || 1;
+      
+      const existing = appState.cart.find(c => c.productId === productId);
+      if (existing) {
+        existing.cantidad += cantidad;
+      } else {
+        appState.cart.push({ productId, nombre, precio, cantidad });
+      }
+      
+      showToast(`${cantidad}x ${nombre} agregado al carrito`, "success");
+      input.value = 1; // Reset a 1 para la próxima compra
+      updateCartBadge();
+      renderView();
+    }
+
+    function changeCartQuantity(index, change) {
+      const input = document.getElementById(`cart-qty-${index}`);
+      let newValue = parseInt(input.value) + change;
+      if (newValue < 1) newValue = 1;
+      input.value = newValue;
+      appState.cart[index].cantidad = newValue;
+      updateCartBadge();
+      renderView();
+    }
+
+    function updateCartQuantity(index, value) {
+      let newValue = parseInt(value) || 1;
+      if (newValue < 1) newValue = 1;
+      appState.cart[index].cantidad = newValue;
+      updateCartBadge();
+      renderView();
+    }
+
+    function removeFromCart(index) {
+      appState.cart.splice(index, 1);
+      updateCartBadge();
+      renderView();
+    }
+
+    function procesarVenta() {
+      if (appState.cart.length === 0) return;
+
+      const cartSummary = appState.cart.map(i => `<div class="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-200 last:border-b-0"><span class="truncate">${escapeHtml(i.nombre)}</span><span class="text-slate-500 whitespace-nowrap">${i.cantidad} x ${formatCurrency(i.precio)}</span><span class="font-semibold whitespace-nowrap">${formatCurrency(i.precio * i.cantidad)}</span></div>`).join("");
+      const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
+      const iva = 0;
+      const total = subtotal;
+
+      const div = document.createElement("div");
+      div.className = "modal-content modal-wide";
+      div.innerHTML = `
+        <div class="modal-header">
+          <h3 class="text-lg font-bold">Procesar venta</h3>
+        </div>
+        <div class="modal-body">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-sm font-semibold mb-1">Cliente (opcional)</label>
+              <select id="clienteSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
+                <option value="">-- Venta al contado --</option>
+                ${db.customers.map(c => `<option value="${c.id}">${c.nombre}</option>`).join("")}
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-semibold mb-1">Método de pago</label>
+              <select id="metodoSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
+                <option value="Efectivo">Efectivo</option>
+                <option value="Tarjeta">Tarjeta crédito</option>
+                <option value="Transferencia">Transferencia</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="bg-slate-50 p-3 rounded-lg mt-3 text-sm border">
+            <div class="font-semibold pb-2">Art&iacute;culos y servicios: ${appState.cart.length}</div>
+            ${cartSummary}
+          </div>
+
+          <div class="bg-slate-50 p-2 rounded-lg mt-2 text-sm space-y-1 border-2 border-slate-900">
+            <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(subtotal)}</span></div>
+            <div class="flex justify-between border-t pt-1"><span class="font-bold">TOTAL:</span><span class="font-bold text-base">${formatCurrency(total)}</span></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" onclick="cerrarModal()" class="flex-1 px-3 py-2 border rounded-lg font-semibold text-sm">Cancelar</button>
+          <button type="button" onclick="confirmarVenta()" class="flex-1 px-3 py-2 bg-slate-900 text-white rounded-lg font-semibold text-sm">Confirmar</button>
+        </div>
+      `;
+
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("modalBackdrop").classList.add("active");
+    }
+
+    async function confirmarVenta() {
+      if (!appState.cart.length || appState.savingSale) return;
+      const clienteId = document.getElementById("clienteSelect").value || null;
+      const metodo = document.getElementById("metodoSelect").value;
+
+      const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
+      const iva = 0;
+      const total = subtotal;
+
+      const sale = {
+        id: uid("sale"),
+        fecha: new Date().toISOString(),
+        clienteId,
+        items: appState.cart.map(c => c.tipo === "servicio" ? { ...c } : { productId: c.productId, cantidad: c.cantidad, precio: c.precio }),
+        subtotal,
+        iva,
+        total,
+        metodoPago: metodo
+      };
+
+      const stockBefore = new Map(db.products.map(product => [product.id, product.stockActual]));
+      sale.items.forEach(item => {
+        if (item.tipo === "servicio") return;
+        const product = db.products.find(p => p.id === item.productId);
+        if (product && product.stockActual > 0) {
+          product.stockActual -= item.cantidad;
+        }
+      });
+      db.sales.push(sale);
+      appState.savingSale = true;
+      const saved = await saveDB();
+      appState.savingSale = false;
+      if (!saved) {
+        db.sales = db.sales.filter(entry => entry.id !== sale.id);
+        db.products.forEach(product => { product.stockActual = stockBefore.get(product.id); });
+        return;
+      }
+      appState.cart = [];
+      updateCartBadge();
+
+      showToast("Venta procesada exitosamente", "success");
+      cerrarModal();
+
+      setTimeout(() => {
+        verFactura(sale.id);
+      }, 300);
+    }
+
+    function verFactura(saleId) {
+      const sale = db.sales.find(s => s.id === saleId);
+      if (!sale) return;
+
+      const customer = sale.clienteId ? db.customers.find(c => c.id === sale.clienteId) : null;
+      const itemsHtml = sale.items.map(item => {
+        const product = db.products.find(p => p.id === item.productId);
+        const description = item.tipo === "servicio" ? `${escapeHtml(item.nombre)}${item.observaciones ? `<p class="text-xs text-slate-500 break-words">${escapeHtml(item.observaciones)}</p>` : ""}` : escapeHtml(product?.nombre || "Producto");
+        return `<tr class="border-b text-sm"><td class="px-2 py-1 break-words">${description}</td><td class="px-2 py-1 text-right">${item.cantidad}</td><td class="px-2 py-1 text-right">${formatCurrency(item.precio)}</td><td class="px-2 py-1 text-right">${formatCurrency(item.cantidad * item.precio)}</td></tr>`;
+      }).join("");
+
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `
+        <div class="modal-header">
+          <h3 class="text-lg font-bold">FACTURA ELECTRÓNICA</h3>
+        </div>
+        <div class="modal-body">
+          <div class="text-center mb-3 pb-3 border-b-2 border-dashed">
+            <p class="text-sm text-slate-600">Mujer Magica - Belleza</p>
+            <p class="text-xs text-slate-500">NIT: 900.123.456-7</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-3 mb-3 text-sm">
+            <div>
+              <p class="font-semibold">FACTURA: ${sale.id}</p>
+              <p class="font-semibold mt-2">FECHA: ${formatDate(sale.fecha)}</p>
+            </div>
+            <div class="text-right">
+              <p class="font-semibold">CLIENTE: ${customer?.nombre || "CONSUMIDOR"}</p>
+              <p class="font-semibold mt-2">PAGO: ${sale.metodoPago}</p>
+            </div>
+          </div>
+
+          <table class="w-full mb-3 text-sm border-collapse">
+            <thead class="bg-slate-900 text-white">
+              <tr><th class="px-2 py-1 text-left">Descripcion</th><th class="px-2 py-1 text-right">Qty</th><th class="px-2 py-1 text-right">P.Unit</th><th class="px-2 py-1 text-right">Subtotal</th></tr>
+            </thead>
+            <tbody>${itemsHtml}</tbody>
+          </table>
+
+          <div class="bg-slate-50 p-2 rounded-lg text-sm space-y-1 border-2 border-slate-900">
+            <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(sale.subtotal)}</span></div>
+            <div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">TOTAL:</span><span class="font-bold">${formatCurrency(sale.total)}</span></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" onclick="imprimirFactura()" class="flex-1 px-3 py-2 border rounded-lg font-semibold">Imprimir</button>
+          <button type="button" onclick="cerrarModal()" class="flex-1 px-3 py-2 bg-slate-900 text-white rounded-lg font-semibold">Cerrar</button>
+        </div>
+      `;
+
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("modalBackdrop").classList.add("active");
+    }
+
+    function imprimirFactura() {
+      window.print();
+    }
+
+    function cerrarModal() {
+      document.getElementById("modalBackdrop").classList.remove("active");
+      renderView();
+    }
+
+    function startClock() {
+      const update = () => {
+        document.getElementById("liveClock").textContent = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+      };
+      update();
+      setInterval(update, 1000);
+    }
+    function toggleSidebar() {
+      const aside = document.querySelector("aside");
+      aside.classList.toggle("collapsed");
+      localStorage.setItem("sidebarCollapsed", aside.classList.contains("collapsed"));
+    }
+
+    function restoreSidebarState() {
+      const isCollapsed = localStorage.getItem("sidebarCollapsed") === "true";
+      const aside = document.querySelector("aside");
+      if (isCollapsed) {
+        aside.classList.add("collapsed");
+      }
+    }
+
+    async function resetDatabase() {
+      if (confirm("¿Estás seguro? Esto eliminará TODOS los cambios y volverá a los datos por defecto.")) {
+        db = createDefaultDB();
+        await saveDB();
+        showToast("Base de datos restaurada a valores iniciales", "success");
+        renderView();
+      }
+    }
+
+    function exportDatabase() {
+      const dataStr = JSON.stringify(db, null, 2);
+      const dataBlob = new Blob([dataStr], { type: "application/json" });
+      const url = URL.createObjectURL(dataBlob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `mujer-magica-backup-${new Date().toISOString().split("T")[0]}.json`;
+      link.click();
+      showToast("Base de datos exportada", "success");
+    }
+
+    // ==================== EVENTOS ====================
+    document.getElementById("toggleSidebar").addEventListener("click", toggleSidebar);
+
+    document.getElementById("globalSearch").addEventListener("input", e => {
+      appState.searchTerm = e.target.value;
+      renderView();
+    });
+
+    document.getElementById("cartBtn").addEventListener("click", () => {
+      appState.currentRoute = "pos";
+      renderView();
+    });
+
+    document.getElementById("alertBtn").addEventListener("click", () => {
+      appState.currentRoute = "dashboard";
+      renderView();
+    });
+
+    document.getElementById("modalBackdrop").addEventListener("click", (e) => {
+      if (e.target === document.getElementById("modalBackdrop")) {
+        cerrarModal();
+      }
+    });
+
+    // ==================== INICIO ====================
+    async function iniciarApp() {
+      const remoto = await loadDB();
+
+      const remotoValido = remoto
+        && Array.isArray(remoto.products)
+        && Array.isArray(remoto.providers)
+        && Array.isArray(remoto.customers)
+        && Array.isArray(remoto.sales)
+        && Array.isArray(remoto.purchases)
+        && Array.isArray(remoto.movements);
+
+      if (remotoValido && remoto.products.length > 0) {
+        db = remoto;
+      } else {
+        const legadoKey = localStorage.getItem("mujermagicaDB")
+          ? "mujermagicaDB"
+          : (localStorage.getItem("mujermagicaDB_backup") ? "mujermagicaDB_backup" : null);
+        const legado = legadoKey ? localStorage.getItem(legadoKey) : null;
+        let migrado = false;
+        if (legado) {
+          const migrar = confirm(`Se encontraron datos guardados en este navegador (${legadoKey}). ¿Deseas migrarlos ahora a la base de datos MySQL?`);
+          if (migrar) {
+            migrado = await migrarDatosLocalStorage(legado);
+          }
+        }
+
+        if (migrado) {
+          db = await loadDB();
+        } else {
+          if (!remotoValido) {
+            db = createDefaultDB();
+            showToast("No se pudo conectar con el backend. Verifica que esté corriendo en el puerto 4000.", "danger");
+          } else {
+            // Si MySQL responde pero está vacío, no sobreescribir automáticamente.
+            db = remoto;
+            showToast("Conectado a MySQL, pero no hay productos cargados todavía.", "warning");
+          }
+        }
+      }
+
+      restoreSidebarState();
+      renderView();
+      startClock();
+      calcularAlertas();
+    }
+
+    iniciarApp();
+  </script>
+</body>
+</html>

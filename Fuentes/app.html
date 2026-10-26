@@ -1,0 +1,822 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema Inventario POS - Mujer Magica | Fase 1+2 CRUD</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --brand-primary: #f97316; --brand-secondary: #14b8a6; --bg-a: #fff7ed; --bg-b: #ecfeff; --bg-c: #eff6ff; }
+    body { font-family: "Manrope", sans-serif; }
+    h1, h2, h3, h4, h5, h6 { font-family: "Sora", sans-serif; }
+    .app-bg { background: radial-gradient(circle at 12% 10%, rgba(249, 115, 22, 0.16), transparent 28%), radial-gradient(circle at 88% 20%, rgba(20, 184, 166, 0.16), transparent 34%), radial-gradient(circle at 52% 86%, rgba(59, 130, 246, 0.1), transparent 30%), linear-gradient(145deg, var(--bg-a), var(--bg-b) 50%, var(--bg-c)); }
+    .panel-glass { backdrop-filter: blur(18px); background: linear-gradient(165deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.66)); box-shadow: 0 18px 44px -18px rgba(15, 23, 42, 0.28), 0 6px 12px -6px rgba(15, 23, 42, 0.15); }
+    .brand-gradient { background: linear-gradient(135deg, #ea580c, #f59e0b 50%, #0f766e 100%); }
+    .nav-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border-radius: 14px; color: #334155; font-weight: 600; font-size: 14px; transition: all 180ms ease; border: 1px solid transparent; background: none; cursor: pointer; }
+    .nav-link:hover { background: rgba(255, 255, 255, 0.85); border-color: rgba(203, 213, 225, 0.7); }
+    .nav-link.active { background: rgba(15, 23, 42, 0.92); color: #fff; box-shadow: 0 10px 24px -16px rgba(15, 23, 42, 0.95); }
+    .kpi-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.84); padding: 18px; }
+    .view-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.86); padding: 18px; box-shadow: 0 18px 36px -28px rgba(15, 23, 42, 0.35); }
+    .stock-badge { border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; display: inline-block; }
+    .toast-item { border-radius: 14px; color: #fff; font-size: 13px; padding: 10px 14px; animation: slide-up 220ms ease; }
+    @keyframes slide-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 40; }
+    .modal-backdrop.active { display: flex; align-items: center; justify-content: center; }
+    .modal-content { background: white; border-radius: 20px; padding: 24px; max-width: 500px; width: 90%; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); }
+  </style>
+</head>
+<body class="app-bg font-body text-slate-800">
+  <div class="min-h-screen p-4 md:p-6">
+    <div class="mx-auto grid max-w-[1440px] grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
+      <aside class="panel-glass overflow-hidden rounded-3xl border border-white/60 h-fit">
+        <div class="brand-gradient px-6 py-7 text-white">
+          <p class="text-xs uppercase tracking-[0.2em] text-white/80">Mujer Magica</p>
+          <h1 class="text-2xl font-bold">Inventario POS</h1>
+          <p class="mt-2 text-sm text-white/90">Control comercial en tiempo real</p>
+        </div>
+        <nav id="sidebarNav" class="space-y-2 px-4 py-4"></nav>
+        <div class="px-4 pb-5 pt-3">
+          <div class="rounded-2xl bg-slate-900 px-4 py-3 text-white shadow-lg">
+            <p class="text-xs uppercase tracking-[0.18em] text-slate-300">Estado</p>
+            <p id="liveClock" class="mt-1 text-lg font-semibold">--:--:--</p>
+            <p class="text-xs text-slate-300">Sesion local sin backend</p>
+          </div>
+        </div>
+      </aside>
+      <main class="space-y-4">
+        <header class="panel-glass rounded-3xl border border-white/60 p-4 md:p-5">
+          <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p id="breadcrumb" class="text-xs uppercase tracking-[0.16em] text-slate-500">Inicio</p>
+              <h2 id="viewTitle" class="text-2xl font-bold text-slate-900">Dashboard</h2>
+            </div>
+            <div class="flex flex-col gap-3 md:flex-row md:items-center">
+              <input id="globalSearch" class="w-full rounded-xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm outline-none md:w-72" placeholder="Busqueda global" />
+              <button id="quickAction" class="rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white hover:bg-slate-700">Accion</button>
+            </div>
+          </div>
+        </header>
+        <section id="appView" class="space-y-4"></section>
+      </main>
+    </div>
+  </div>
+  <div id="toastHost" class="pointer-events-none fixed bottom-5 right-5 z-50 space-y-2"></div>
+  <div id="modalBackdrop" class="modal-backdrop"><div id="modalContent"></div></div>
+
+  <script>
+    // UTILS
+    const formatCurrency = (v, c = "COP") => new Intl.NumberFormat("es-CO", { style: "currency", currency: c, maximumFractionDigits: 0 }).format(v || 0);
+    const formatDate = (d) => { const date = new Date(d); return Number.isNaN(date.getTime()) ? "--" : new Intl.DateTimeFormat("es-CO", { year: "numeric", month: "short", day: "2-digit" }).format(date); };
+    const uid = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 10)}`;
+    const stockVisual = (s, r) => !s ? { label: "Sin stock", className: "bg-slate-200 text-slate-700" } : s < r.red.max ? { label: "Critico", className: "bg-red-100 text-red-700" } : s <= r.orange.max ? { label: "Bajo", className: "bg-orange-100 text-orange-700" } : s <= r.yellow.max ? { label: "Medio", className: "bg-amber-100 text-amber-700" } : { label: "Optimo", className: "bg-emerald-100 text-emerald-700" };
+    const showToast = (m, t = "info") => { const h = document.getElementById("toastHost"); if (!h) return; const p = { info: "bg-slate-900", success: "bg-emerald-700", warning: "bg-amber-700", danger: "bg-red-700" }; const e = document.createElement("div"); e.className = `toast-item ${p[t] || p.info}`; e.textContent = m; h.appendChild(e); setTimeout(() => e.remove(), 2600); };
+    const computeInventoryValue = (p) => p.reduce((s, i) => s + i.stockActual * i.costoPromedio, 0);
+    const computeEstimatedProfit = (p) => p.reduce((s, i) => s + (i.precioVentaDetal - i.costoPromedio) * i.stockActual, 0);
+
+    // DB
+    const today = new Date().toISOString();
+    const brands = ["CABA", "Angelous", "Milagros", "Pocion", "Salvatore", "Kativa", "Alfaparf", "Loreal", "Schwarzkopf", "Wella"];
+    const providers = [
+      { id: "prov_001", nombre: "Distribuciones CABA", telefono: "3001002000", correo: "compras@caba.co", direccion: "Cra 12 #45-20", ciudad: "Medellin", contacto: "Laura Casta", productos: ["Shampoo", "Acondicionador"] },
+      { id: "prov_002", nombre: "Belleza Profesional SAS", telefono: "3016677889", correo: "ventas@bellezapro.co", direccion: "Calle 8 #32-10", ciudad: "Bogota", contacto: "Javier Ruiz", productos: ["Sombras", "Brochas"] },
+      { id: "prov_003", nombre: "Cosmeticos del Norte", telefono: "3028899001", correo: "suministros@cosnorte.co", direccion: "Av 4N #19-50", ciudad: "Cali", contacto: "Paola Nieto", productos: ["Repolarizador", "Mantequilla"] }
+    ];
+    const customers = [
+      { id: "cli_001", nombre: "Mariana Gil", documento: "1023456789", telefono: "3114456677", correo: "mariana.gil@email.com", direccion: "Cra 70 #22-15" },
+      { id: "cli_002", nombre: "Diana Toro", documento: "52999887", telefono: "3129987744", correo: "diana.toro@email.com", direccion: "Calle 10 #14-22" }
+    ];
+    const productSeed = [
+      { nombre: "Shampoo", categoria: "Capilar", marca: "Kativa", proveedor: "Distribuciones CABA", precioCompra: 18000, precioVentaDetal: 29000, stock: 24, ubicacion: "A1-01" },
+      { nombre: "Acondicionador", categoria: "Capilar", marca: "Wella", proveedor: "Distribuciones CABA", precioCompra: 17000, precioVentaDetal: 28000, stock: 20, ubicacion: "A1-02" },
+      { nombre: "Mantequilla Capilar", categoria: "Capilar", marca: "Milagros", proveedor: "Cosmeticos del Norte", precioCompra: 22000, precioVentaDetal: 36000, stock: 13, ubicacion: "A1-03" },
+      { nombre: "Crema para Cabello", categoria: "Capilar", marca: "Pocion", proveedor: "Cosmeticos del Norte", precioCompra: 19000, precioVentaDetal: 32500, stock: 16, ubicacion: "A1-04" },
+      { nombre: "Perfume Capilar", categoria: "Capilar", marca: "Alfaparf", proveedor: "Distribuciones CABA", precioCompra: 15000, precioVentaDetal: 26000, stock: 9, ubicacion: "A1-05" },
+      { nombre: "Sombras", categoria: "Maquillaje", marca: "Loreal", proveedor: "Belleza Profesional SAS", precioCompra: 24000, precioVentaDetal: 39000, stock: 11, ubicacion: "B1-01" },
+      { nombre: "Brillos", categoria: "Maquillaje", marca: "Angelous", proveedor: "Belleza Profesional SAS", precioCompra: 12000, precioVentaDetal: 22000, stock: 28, ubicacion: "B1-02" },
+      { nombre: "Repolarizador", categoria: "Capilar", marca: "Salvatore", proveedor: "Cosmeticos del Norte", precioCompra: 30000, precioVentaDetal: 48000, stock: 7, ubicacion: "A2-01" },
+      { nombre: "Brochas", categoria: "Maquillaje", marca: "Schwarzkopf", proveedor: "Belleza Profesional SAS", precioCompra: 28000, precioVentaDetal: 45000, stock: 5, ubicacion: "B1-03" },
+      { nombre: "Polvo Compacto", categoria: "Maquillaje", marca: "CABA", proveedor: "Belleza Profesional SAS", precioCompra: 21000, precioVentaDetal: 34500, stock: 14, ubicacion: "B1-04" }
+    ];
+    const products = productSeed.map((d, i) => ({ id: `prod_${String(i+1).padStart(3,"0")}`, nombre: d.nombre, descripcion: d.nombre, categoria: d.categoria, marca: d.marca, proveedor: d.proveedor, imagen: `https://picsum.photos/seed/${d.nombre}/240/240`, sku: `MM-${String(i+1).padStart(4,"0")}`, codigoBarras: `77000${String(i+1).padStart(8,"0")}`, precioCompra: d.precioCompra, precioVentaMayorista: d.precioVentaDetal*0.85, precioVentaDetal: d.precioVentaDetal, costoPromedio: d.precioCompra, utilidad: d.precioVentaDetal - d.precioCompra, iva: 19, stockActual: d.stock, stockMinimo: 8, stockMaximo: 80, ubicacion: d.ubicacion, fechaIngreso: today, fechaUltimaCompra: today, activo: true }));
+
+    const db = { settings: { iva: 19, stockMinimoGlobal: 8, stockMaximoGlobal: 80, moneda: "COP", nombreEmpresa: "Mujer Magica", logo: "MM", colorPrincipal: "#f97316", colorSecundario: "#14b8a6", tema: "claro", stockRules: { green: { min: 21 }, yellow: { min: 10, max: 20 }, orange: { min: 5, max: 9 }, red: { min: 1, max: 4 }, gray: { value: 0 } } }, brands, providers, customers, products, purchases: [{ id: uid("buy"), fecha: today, proveedorId: "prov_002", items: [{ productId: "prod_006", cantidad: 10, costo: 24000 }], iva: 45600, total: 285600, observaciones: "Compra inicial" }], sales: [{ id: uid("sale"), fecha: today, clienteId: "cli_001", items: [{ productId: "prod_001", cantidad: 2, precio: 29000 }], subtotal: 58000, iva: 11020, descuento: 0, total: 69020, metodoPago: "Efectivo" }], invoices: [{ id: "FAC-1001", saleId: "sale_xxx", qrCode: "QR-SIMULADO-1001" }] };
+
+    // RENDERS
+    function renderDashboard(st, s = "") {
+      const p = st.products.filter(i => i.nombre.toLowerCase().includes(s.toLowerCase()));
+      const iv = computeInventoryValue(p);
+      const ep = computeEstimatedProfit(p);
+      const st_total = st.sales.reduce((s, sl) => s + sl.items.reduce((a, l) => a + l.cantidad, 0), 0);
+      const ls = p.filter(i => i.stockActual <= i.stockMinimo).length;
+      const os = p.filter(i => i.stockActual <= 0).length;
+      const cat = p.reduce((a, i) => { a[i.categoria] = (a[i.categoria] || 0) + 1; return a; }, {});
+      return `<section class="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5"><article class="kpi-card"><p class="text-xs uppercase text-slate-500">Total productos</p><h3 class="mt-2 text-2xl font-extrabold">${p.length}</h3></article><article class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendidos</p><h3 class="mt-2 text-2xl font-extrabold">${st_total}</h3></article><article class="kpi-card"><p class="text-xs uppercase text-slate-500">Valor inventario</p><h3 class="mt-2 text-2xl font-extrabold">${formatCurrency(iv)}</h3></article><article class="kpi-card"><p class="text-xs uppercase text-slate-500">Utilidad estimada</p><h3 class="mt-2 text-2xl font-extrabold">${formatCurrency(ep)}</h3></article><article class="kpi-card"><p class="text-xs uppercase text-slate-500">Alertas stock</p><h3 class="mt-2 text-2xl font-extrabold">${ls}</h3><p class="mt-1 text-xs text-slate-500">Sin stock: ${os}</p></article></section><section class="grid grid-cols-1 gap-4 xl:grid-cols-3"><article class="view-card xl:col-span-2"><h4 class="text-lg font-bold">Resumen de ventas e inventario</h4><div class="grid grid-cols-1 gap-4 sm:grid-cols-3 mt-4"><div class="rounded-2xl bg-gradient-to-br from-orange-100 p-4"><p class="text-sm font-semibold">Ventas del dia</p><p class="mt-2 text-xl font-extrabold">${formatCurrency(69020)}</p></div><div class="rounded-2xl bg-gradient-to-br from-teal-100 p-4"><p class="text-sm font-semibold">Tickets</p><p class="mt-2 text-xl font-extrabold">${st.sales.length}</p></div><div class="rounded-2xl bg-gradient-to-br from-sky-100 p-4"><p class="text-sm font-semibold">Compras</p><p class="mt-2 text-xl font-extrabold">${st.purchases.length}</p></div></div></article><article class="view-card"><h4 class="text-lg font-bold">Categorias</h4><ul class="mt-3 space-y-2">${Object.entries(cat).map(([c, cnt]) => `<li class="flex justify-between text-sm border-b pb-2"><span>${c}</span><span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold">${cnt}</span></li>`).join("")}</ul></article></section>`;
+    }
+
+    function renderProducts(st, s = "") {
+      const c = s.toLowerCase();
+      const rows = st.products.filter(i => !c || `${i.nombre} ${i.sku} ${i.marca}`.toLowerCase().includes(c)).map(i => {
+        const sk = stockVisual(i.stockActual, { red: { max: 4 }, orange: { max: 9 }, yellow: { max: 20 } });
+        return `<tr class="border-b text-sm"><td class="px-3 py-3"><div class="flex items-center gap-3"><img src="${i.imagen}" alt="${i.nombre}" class="h-10 w-10 rounded-lg object-cover" /><div><p class="font-semibold">${i.nombre}</p><p class="text-xs text-slate-500">${i.sku}</p></div></div></td><td class="px-3 py-3">${i.categoria}</td><td class="px-3 py-3">${i.marca}</td><td class="px-3 py-3">${i.proveedor}</td><td class="px-3 py-3">${formatCurrency(i.precioVentaDetal)}</td><td class="px-3 py-3">${i.stockActual}</td><td class="px-3 py-3"><span class="stock-badge ${sk.className}">${sk.label}</span></td><td class="px-3 py-3 text-center"><button class="btn-edit" data-id="${i.id}">✏️</button></td></tr>`;
+      }).join("");
+      return `<section class="view-card"><div class="mb-4 flex justify-between"><div><h3 class="text-lg font-bold">Catalogo de productos</h3><p class="text-sm text-slate-500">CRUD funcional Fase 2</p></div><button id="btnNewProduct" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Nuevo</button></div><div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full"><thead class="bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-3 text-left">Producto</th><th class="px-3 py-3 text-left">Categoria</th><th class="px-3 py-3 text-left">Marca</th><th class="px-3 py-3 text-left">Proveedor</th><th class="px-3 py-3 text-left">P.detal</th><th class="px-3 py-3 text-left">Stock</th><th class="px-3 py-3 text-left">Estado</th><th class="px-3 py-3">Accion</th></tr></thead><tbody>${rows || `<tr><td colspan="8" class="px-3 py-6 text-center text-sm text-slate-500">Sin coincidencias</td></tr>`}</tbody></table></div></section>`;
+    }
+
+    function renderProviders(st, s = "") {
+      const c = s.toLowerCase();
+      const cards = st.providers.filter(i => !c || `${i.nombre} ${i.ciudad}`.toLowerCase().includes(c)).map(i => `<article class="rounded-2xl border bg-white p-4"><h4 class="font-bold">${i.nombre}</h4><p class="mt-1 text-sm text-slate-500">Contacto: ${i.contacto}</p><p class="text-sm text-slate-500">Tel: ${i.telefono}</p><p class="text-sm text-slate-500">Ciudad: ${i.ciudad}</p><div class="mt-3 flex flex-wrap gap-1">${i.productos.map(p => `<span class="rounded-full bg-slate-100 px-2 py-0.5 text-xs">${p}</span>`).join("")}</div><button class="btn-edit-prov mt-2 w-full rounded-lg border px-2 py-1 text-xs font-semibold" data-id="${i.id}">Editar</button></article>`).join("");
+      return `<section class="view-card"><div class="mb-4 flex justify-between"><div><h3 class="text-lg font-bold">Proveedores</h3><p class="text-sm text-slate-500">Maestro de abastecimiento</p></div><button id="btnNewProvider" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Nuevo</button></div><div class="grid grid-cols-1 gap-3 md:grid-cols-2">${cards}</div></section>`;
+    }
+
+    function renderCustomers(st, s = "") {
+      const c = s.toLowerCase();
+      const rows = st.customers.filter(i => !c || `${i.nombre} ${i.documento}`.toLowerCase().includes(c)).map(i => `<tr class="border-b text-sm"><td class="px-3 py-3 font-semibold">${i.nombre}</td><td class="px-3 py-3">${i.documento}</td><td class="px-3 py-3">${i.telefono}</td><td class="px-3 py-3">${i.correo}</td><td class="px-3 py-3">${i.direccion}</td><td class="px-3 py-3 text-center"><button class="btn-edit-cust" data-id="${i.id}">✏️</button></td></tr>`).join("");
+      return `<section class="view-card"><div class="mb-4 flex justify-between"><div><h3 class="text-lg font-bold">Clientes</h3><p class="text-sm text-slate-500">CRUD comercial</p></div><button id="btnNewCustomer" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Nuevo</button></div><div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full"><thead class="bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-3 text-left">Nombre</th><th class="px-3 py-3 text-left">Documento</th><th class="px-3 py-3 text-left">Telefono</th><th class="px-3 py-3 text-left">Correo</th><th class="px-3 py-3 text-left">Direccion</th><th class="px-3 py-3">Accion</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    }
+
+    function renderInventory(st, s = "") {
+      const c = s.toLowerCase();
+      const items = st.products.filter(i => !c || `${i.nombre} ${i.ubicacion}`.toLowerCase().includes(c));
+      const cards = items.map(i => {
+        const sk = stockVisual(i.stockActual, { red: { max: 4 }, orange: { max: 9 }, yellow: { max: 20 } });
+        return `<article class="rounded-2xl border bg-white p-4"><div class="flex justify-between"><h4 class="font-semibold">${i.nombre}</h4><span class="stock-badge ${sk.className}">${sk.label}</span></div><p class="mt-2 text-sm text-slate-500">Ubicacion: ${i.ubicacion}</p><p class="text-sm text-slate-500">Stock: ${i.stockActual}</p><p class="text-sm text-slate-500">Costo: ${formatCurrency(i.costoPromedio)}</p></article>`;
+      }).join("");
+      return `<section class="view-card"><h3 class="text-lg font-bold mb-4">Control de inventario</h3><div class="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">${cards}</div></section>`;
+    }
+
+    function renderPurchases(st) {
+      const rows = st.purchases.map(i => `<tr class="border-b text-sm"><td class="px-3 py-3">${i.id}</td><td class="px-3 py-3">${formatDate(i.fecha)}</td><td class="px-3 py-3">${i.proveedorId}</td><td class="px-3 py-3">${i.items.length}</td><td class="px-3 py-3">${formatCurrency(i.total)}</td><td class="px-3 py-3">${i.observaciones}</td></tr>`).join("");
+      return `<section class="view-card"><div class="mb-4 flex justify-between"><h3 class="text-lg font-bold">Compras</h3><button class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Registrar</button></div><div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full"><thead class="bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-3 text-left">Documento</th><th class="px-3 py-3 text-left">Fecha</th><th class="px-3 py-3 text-left">Proveedor</th><th class="px-3 py-3 text-left">Items</th><th class="px-3 py-3 text-left">Total</th><th class="px-3 py-3 text-left">Observacion</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    }
+
+    function renderSales(st) {
+      const rows = st.sales.map(i => {
+        return `<tr class="border-b text-sm"><td class="px-3 py-3">${i.id}</td><td class="px-3 py-3">${formatDate(i.fecha)}</td><td class="px-3 py-3">${i.clienteId}</td><td class="px-3 py-3">${i.items.length}</td><td class="px-3 py-3">${i.descuento}%</td><td class="px-3 py-3 font-semibold">${formatCurrency(i.total)}</td><td class="px-3 py-3 text-center"><button class="btn-invoice" data-id="${i.id}" title="Ver factura">🧾</button></td></tr>`;
+      }).join("");
+      return `<section class="view-card"><div class="mb-4 flex justify-between"><h3 class="text-lg font-bold">POS Ventas</h3><button id="btnNewSale" class="rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Nueva venta</button></div><div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full"><thead class="bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-3 text-left">Ticket</th><th class="px-3 py-3 text-left">Fecha</th><th class="px-3 py-3 text-left">Cliente</th><th class="px-3 py-3 text-left">Items</th><th class="px-3 py-3 text-left">Descuento</th><th class="px-3 py-3 text-left">Total</th><th class="px-3 py-3 text-left">Factura</th></tr></thead><tbody>${rows}</tbody></table></div></section>`;
+    }
+
+    function renderReports(st) {
+      const iv = st.products.reduce((s, i) => s + i.costoPromedio * i.stockActual, 0);
+      const sv = st.sales.reduce((s, sl) => s + sl.total, 0);
+      return `<section class="grid grid-cols-1 gap-4 md:grid-cols-3"><article class="view-card"><p class="text-xs uppercase text-slate-500">Reporte de ventas</p><h3 class="mt-2 text-2xl font-extrabold">${formatCurrency(sv)}</h3></article><article class="view-card"><p class="text-xs uppercase text-slate-500">Valor inventario</p><h3 class="mt-2 text-2xl font-extrabold">${formatCurrency(iv)}</h3></article><article class="view-card"><p class="text-xs uppercase text-slate-500">Productos</p><h3 class="mt-2 text-2xl font-extrabold">${st.products.length}</h3></article></section>`;
+    }
+
+    // ROUTES
+    const routes = [
+      { id: "dashboard", label: "Dashboard", icon: "D", title: "Dashboard", subtitle: "Vision general", render: renderDashboard },
+      { id: "products", label: "Productos", icon: "P", title: "Productos", subtitle: "Catalogo", render: renderProducts },
+      { id: "providers", label: "Proveedores", icon: "R", title: "Proveedores", subtitle: "Abastecimiento", render: renderProviders },
+      { id: "customers", label: "Clientes", icon: "C", title: "Clientes", subtitle: "Base comercial", render: renderCustomers },
+      { id: "inventory", label: "Inventario", icon: "I", title: "Inventario", subtitle: "Existencias", render: renderInventory },
+      { id: "purchases", label: "Compras", icon: "M", title: "Compras", subtitle: "Ingresos", render: renderPurchases },
+      { id: "sales", label: "POS", icon: "V", title: "POS Ventas", subtitle: "Punto venta", render: renderSales },
+      { id: "reports", label: "Reportes", icon: "T", title: "Reportes", subtitle: "Analitica", render: renderReports }
+    ];
+
+    const appState = { currentRoute: "dashboard", searchTerm: "", cart: [], cartOpen: false, currentSaleCustomerId: null };
+    const $view = document.getElementById("appView");
+    const $sidebar = document.getElementById("sidebarNav");
+    const $title = document.getElementById("viewTitle");
+    const $crumb = document.getElementById("breadcrumb");
+    const $search = document.getElementById("globalSearch");
+    const $quickAction = document.getElementById("quickAction");
+    const $clock = document.getElementById("liveClock");
+    const $modal = document.getElementById("modalBackdrop");
+    const $modalContent = document.getElementById("modalContent");
+
+    // FASE 3 - FUNCIONES POS
+    function updateCartBadge() {
+      const cartBtn = document.querySelector("#cartBtn");
+      if (cartBtn) {
+        cartBtn.textContent = `🛒 (${appState.cart.length})`;
+      }
+    }
+
+    function showPOSModal() {
+      const cartTotal = appState.cart.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
+      const iva = cartTotal * 0.19;
+      const finalTotal = cartTotal + iva;
+
+      const div = document.createElement("div");
+      div.className = "modal-content max-w-2xl";
+      div.innerHTML = `
+        <h3 class="text-lg font-bold mb-4">Punto de Venta - Nueva Venta</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-semibold mb-2">Cliente</label>
+            <select id="saleCustomer" class="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="">-- Venta al contado --</option>
+              ${db.customers.map(c => `<option value="${c.id}">${c.nombre}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold mb-2">Metodo de pago</label>
+            <select id="paymentMethod" class="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="Efectivo">Efectivo</option>
+              <option value="Tarjeta">Tarjeta de credito</option>
+              <option value="Transferencia">Transferencia bancaria</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="block text-sm font-semibold mb-2">Items en carrito (${appState.cart.length})</label>
+        <div class="bg-slate-50 rounded-lg p-3 mb-4 max-h-48 overflow-y-auto">
+          ${appState.cart.length > 0 ? appState.cart.map((item, idx) => `
+            <div class="flex justify-between items-center py-2 border-b text-sm">
+              <div>
+                <p class="font-semibold">${item.nombre}</p>
+                <p class="text-xs text-slate-500">${item.cantidad} x ${formatCurrency(item.precio)}</p>
+              </div>
+              <div class="flex gap-2 items-center">
+                <p class="font-semibold">${formatCurrency(item.cantidad * item.precio)}</p>
+                <button class="btn-remove-cart px-2 py-1 text-xs bg-red-100 text-red-700 rounded" data-index="${idx}">✕</button>
+              </div>
+            </div>
+          `).join("") : '<p class="text-sm text-slate-500">Carrito vacio</p>'}
+        </div>
+
+        <div class="bg-blue-50 rounded-lg p-3 mb-4 text-sm space-y-1">
+          <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(cartTotal)}</span></div>
+          <div class="flex justify-between"><span>IVA (19%):</span><span class="font-semibold">${formatCurrency(iva)}</span></div>
+          <div class="flex justify-between border-t pt-1"><span class="font-bold">Total:</span><span class="font-bold text-lg">${formatCurrency(finalTotal)}</span></div>
+        </div>
+
+        <div class="flex gap-2">
+          <button type="button" id="btnCancelSale" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cancelar</button>
+          <button type="button" id="btnCompleteSale" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white" ${appState.cart.length === 0 ? 'disabled' : ''}>Procesar venta</button>
+        </div>
+      `;
+      $modalContent.innerHTML = "";
+      $modalContent.appendChild(div);
+      $modal.classList.add("active");
+
+      const removeCartBtns = div.querySelectorAll(".btn-remove-cart");
+      removeCartBtns.forEach(b => b.addEventListener("click", e => {
+        const idx = parseInt(e.target.dataset.index);
+        appState.cart.splice(idx, 1);
+        showPOSModal();
+      }));
+
+      document.getElementById("btnCancelSale").addEventListener("click", () => {
+        $modal.classList.remove("active");
+      });
+
+      document.getElementById("btnCompleteSale").addEventListener("click", () => {
+        if (appState.cart.length === 0) return;
+        const customerId = document.getElementById("saleCustomer").value || null;
+        const paymentMethod = document.getElementById("paymentMethod").value;
+        processSale(customerId, paymentMethod, cartTotal, iva, finalTotal);
+      });
+    }
+
+    function processSale(customerId, paymentMethod, subtotal, iva, total) {
+      const saleId = uid("sale");
+      const newSale = {
+        id: saleId,
+        fecha: today,
+        clienteId: customerId,
+        items: appState.cart.map(item => {
+          const product = db.products.find(p => p.id === item.productId);
+          if (product && product.stockActual > 0) product.stockActual -= item.cantidad;
+          return { productId: item.productId, cantidad: item.cantidad, precio: item.precio };
+        }),
+        subtotal,
+        iva,
+        descuento: 0,
+        total,
+        metodoPago: paymentMethod
+      };
+
+      db.sales.push(newSale);
+
+      const invoiceId = `FAC-${String(db.invoices.length + 1).padStart(4, "0")}`;
+      db.invoices.push({ id: invoiceId, saleId, qrCode: `QR-${saleId}` });
+
+      showToast("Venta procesada exitosamente", "success");
+      appState.cart = [];
+      appState.currentSaleCustomerId = null;
+      updateCartBadge();
+
+      setTimeout(() => {
+        showInvoiceModal(newSale);
+      }, 500);
+    }
+
+    function showInvoiceModal(sale) {
+      const customer = sale.clienteId ? db.customers.find(c => c.id === sale.clienteId) : null;
+      const itemsHtml = sale.items.map(item => {
+        const product = db.products.find(p => p.id === item.productId);
+        return `<tr class="border-b text-sm"><td class="px-2 py-1">${product?.nombre || "Producto"}</td><td class="px-2 py-1 text-right">${item.cantidad}</td><td class="px-2 py-1 text-right">${formatCurrency(item.precio)}</td><td class="px-2 py-1 text-right">${formatCurrency(item.cantidad * item.precio)}</td></tr>`;
+      }).join("");
+
+      const div = document.createElement("div");
+      div.className = "modal-content max-w-2xl";
+      div.innerHTML = `
+        <div class="bg-white border-4 border-slate-900 p-6 rounded-lg">
+          <div class="text-center mb-4 pb-3 border-b-2 border-dashed">
+            <h2 class="text-2xl font-bold">FACTURA ELECTRONICA</h2>
+            <p class="text-sm text-slate-600">Mujer Magica - Belleza y Cosmética</p>
+            <p class="text-xs text-slate-500">NIT: 900.123.456-7</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+            <div>
+              <p class="font-semibold">FACTURA:</p>
+              <p class="text-lg font-bold">${sale.id}</p>
+              <p class="font-semibold mt-2">FECHA:</p>
+              <p>${formatDate(sale.fecha)}</p>
+            </div>
+            <div class="text-right">
+              <p class="font-semibold">CLIENTE:</p>
+              <p>${customer ? customer.nombre : "CONSUMIDOR FINAL"}</p>
+              ${customer ? `<p class="text-xs text-slate-600">${customer.documento}</p>` : ""}
+              <p class="font-semibold mt-2">METODO PAGO:</p>
+              <p>${sale.metodoPago}</p>
+            </div>
+          </div>
+
+          <table class="w-full mb-4 text-sm border-collapse">
+            <thead class="bg-slate-900 text-white">
+              <tr>
+                <th class="px-2 py-1 text-left">Descripcion</th>
+                <th class="px-2 py-1 text-right">Cantidad</th>
+                <th class="px-2 py-1 text-right">Precio Unitario</th>
+                <th class="px-2 py-1 text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>${itemsHtml}</tbody>
+          </table>
+
+          <div class="bg-slate-50 p-3 rounded-lg mb-4 text-sm space-y-1">
+            <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(sale.subtotal)}</span></div>
+            <div class="flex justify-between"><span>IVA (19%):</span><span class="font-semibold">${formatCurrency(sale.iva)}</span></div>
+            <div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">TOTAL:</span><span class="font-bold text-lg">${formatCurrency(sale.total)}</span></div>
+          </div>
+
+          <div class="text-center mb-4 p-3 bg-blue-50 rounded-lg">
+            <p class="text-xs font-semibold mb-1">CODIGO QR</p>
+            <p class="font-mono text-sm bg-white p-2 rounded border">█▀█▀█▀█▀█</p>
+            <p class="text-xs mt-1">Escanea para verificar</p>
+          </div>
+
+          <div class="text-center text-xs text-slate-600 mb-4">
+            <p>Gracias por su compra</p>
+            <p>Vuelve pronto a Mujer Magica</p>
+          </div>
+
+          <div class="flex gap-2">
+            <button type="button" id="btnPrintInvoice" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Imprimir</button>
+            <button type="button" id="btnDownloadInvoice" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Descargar PDF</button>
+            <button type="button" id="btnCloseInvoice" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cerrar</button>
+          </div>
+        </div>
+      `;
+      $modalContent.innerHTML = "";
+      $modalContent.appendChild(div);
+      $modal.classList.add("active");
+
+      document.getElementById("btnPrintInvoice").addEventListener("click", () => {
+        window.print();
+      });
+
+      document.getElementById("btnDownloadInvoice").addEventListener("click", () => {
+        showToast("PDF descargado (simulado)", "success");
+      });
+
+      document.getElementById("btnCloseInvoice").addEventListener("click", () => {
+        $modal.classList.remove("active");
+        renderView();
+      });
+    }
+
+    function renderSidebar() {
+      $sidebar.innerHTML = routes.map(r => {
+        const active = r.id === appState.currentRoute ? "active" : "";
+        return `<button data-route="${r.id}" class="nav-link ${active}"><span class="inline-flex h-6 w-6 items-center justify-center rounded-full bg-white/20 text-xs font-bold">${r.icon}</span><span>${r.label}</span></button>`;
+      }).join("");
+    }
+
+    function renderView() {
+      const route = routes.find(i => i.id === appState.currentRoute) || routes[0];
+      $title.textContent = route.title;
+      $crumb.textContent = `Inicio / ${route.subtitle}`;
+      $view.innerHTML = route.render(db, appState.searchTerm);
+      renderSidebar();
+      attachListeners();
+    }
+
+    function attachListeners() {
+      // Función para agregar producto al carrito (Fase 3 - POS)
+      const addToCartBtns = $view.querySelectorAll(".btn-add-cart");
+      addToCartBtns.forEach(b => b.addEventListener("click", e => {
+        const productId = e.target.dataset.id;
+        const product = db.products.find(p => p.id === productId);
+        if (!product) return;
+        
+        const existingItem = appState.cart.find(ci => ci.productId === productId);
+        if (existingItem) {
+          existingItem.cantidad += 1;
+        } else {
+          appState.cart.push({ productId, nombre: product.nombre, precio: product.precioVentaDetal, cantidad: 1, subtotal: product.precioVentaDetal });
+        }
+        showToast(`${product.nombre} agregado al carrito`, "success");
+        updateCartBadge();
+      }));
+
+      // Botón Nueva Venta
+      const btnNewSale = $view.querySelector("#btnNewSale");
+      if (btnNewSale) {
+        btnNewSale.addEventListener("click", () => showPOSModal());
+      }
+
+      // Ver factura
+      const invoiceBtns = $view.querySelectorAll(".btn-invoice");
+      invoiceBtns.forEach(b => b.addEventListener("click", e => {
+        const saleId = e.target.dataset.id;
+        const sale = db.sales.find(s => s.id === saleId);
+        if (sale) showInvoiceModal(sale);
+      }));
+
+      $sidebar.addEventListener("click", e => {
+        const t = e.target.closest("[data-route]");
+        if (!t) return;
+        appState.currentRoute = t.dataset.route;
+        renderView();
+      });
+      $search.addEventListener("input", e => {
+        appState.searchTerm = e.target.value;
+        renderView();
+      });
+      $quickAction.addEventListener("click", () => showToast("Fase 1+2+3 con POS CRUD completada", "success"));
+      $modal.addEventListener("click", e => { if (e.target === $modal) $modal.classList.remove("active"); });
+    }
+
+    function updateCartBadge() {
+      const cartBtn = document.querySelector("#cartBtn");
+      if (cartBtn) {
+        cartBtn.textContent = `🛒 (${appState.cart.length})`;
+      }
+    }
+
+    function showPOSModal() {
+      const cartTotal = appState.cart.reduce((sum, item) => sum + (item.precio * item.cantidad), 0);
+      const iva = cartTotal * 0.19;
+      const finalTotal = cartTotal + iva;
+
+      const div = document.createElement("div");
+      div.className = "modal-content max-w-2xl";
+      div.innerHTML = `
+        <h3 class="text-lg font-bold mb-4">Punto de Venta - Nueva Venta</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          <div>
+            <label class="block text-sm font-semibold mb-2">Cliente</label>
+            <select id="saleCustomer" class="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="">-- Venta al contado --</option>
+              ${db.customers.map(c => `<option value="${c.id}">${c.nombre}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold mb-2">Metodo de pago</label>
+            <select id="paymentMethod" class="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="Efectivo">Efectivo</option>
+              <option value="Tarjeta">Tarjeta de credito</option>
+              <option value="Transferencia">Transferencia bancaria</option>
+            </select>
+          </div>
+        </div>
+
+        <label class="block text-sm font-semibold mb-2">Items en carrito (${appState.cart.length})</label>
+        <div class="bg-slate-50 rounded-lg p-3 mb-4 max-h-48 overflow-y-auto">
+          ${appState.cart.map((item, idx) => `
+            <div class="flex justify-between items-center py-2 border-b text-sm">
+              <div>
+                <p class="font-semibold">${item.nombre}</p>
+                <p class="text-xs text-slate-500">${item.cantidad} x ${formatCurrency(item.precio)}</p>
+              </div>
+              <div class="flex gap-2 items-center">
+                <p class="font-semibold">${formatCurrency(item.cantidad * item.precio)}</p>
+                <button class="btn-remove-cart px-2 py-1 text-xs bg-red-100 text-red-700 rounded" data-index="${idx}">✕</button>
+              </div>
+            </div>
+          `).join("")}
+        </div>
+
+        <div class="bg-blue-50 rounded-lg p-3 mb-4 space-y-1 text-sm">
+          <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(cartTotal)}</span></div>
+          <div class="flex justify-between"><span>IVA (19%):</span><span class="font-semibold">${formatCurrency(iva)}</span></div>
+          <div class="flex justify-between border-t pt-1"><span class="font-bold">Total:</span><span class="font-bold text-lg">${formatCurrency(finalTotal)}</span></div>
+        </div>
+
+        <div class="flex gap-2">
+          <button type="button" id="btnCancelSale" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cancelar</button>
+          <button type="button" id="btnCompleteSale" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Procesar venta</button>
+        </div>
+      `;
+      $modalContent.innerHTML = "";
+      $modalContent.appendChild(div);
+      $modal.classList.add("active");
+
+      // Agregar event listeners
+      const removeCartBtns = div.querySelectorAll(".btn-remove-cart");
+      removeCartBtns.forEach(b => b.addEventListener("click", e => {
+        const idx = parseInt(e.target.dataset.index);
+        appState.cart.splice(idx, 1);
+        showPOSModal();
+      }));
+
+      document.getElementById("btnCancelSale").addEventListener("click", () => {
+        $modal.classList.remove("active");
+      });
+
+      document.getElementById("btnCompleteSale").addEventListener("click", () => {
+        const customerId = document.getElementById("saleCustomer").value || null;
+        const paymentMethod = document.getElementById("paymentMethod").value;
+        processSale(customerId, paymentMethod, cartTotal, iva, finalTotal);
+      });
+    }
+
+    function processSale(customerId, paymentMethod, subtotal, iva, total) {
+      const saleId = uid("sale");
+      const newSale = {
+        id: saleId,
+        fecha: today,
+        clienteId: customerId,
+        items: appState.cart.map(item => {
+          const product = db.products.find(p => p.id === item.productId);
+          if (product) product.stockActual -= item.cantidad;
+          return { productId: item.productId, cantidad: item.cantidad, precio: item.precio };
+        }),
+        subtotal,
+        iva,
+        descuento: 0,
+        total,
+        metodoPago: paymentMethod
+      };
+
+      db.sales.push(newSale);
+
+      // Generar factura
+      const invoiceId = `FAC-${String(db.invoices.length + 1).padStart(4, "0")}`;
+      db.invoices.push({ id: invoiceId, saleId, qrCode: `QR-${saleId}` });
+
+      showToast("Venta procesada exitosamente", "success");
+      appState.cart = [];
+      appState.currentSaleCustomerId = null;
+      updateCartBadge();
+
+      setTimeout(() => {
+        showInvoiceModal(newSale);
+      }, 500);
+    }
+
+    function showInvoiceModal(sale) {
+      const customer = sale.clienteId ? db.customers.find(c => c.id === sale.clienteId) : null;
+      const itemsHtml = sale.items.map(item => {
+        const product = db.products.find(p => p.id === item.productId);
+        return `<tr class="border-b text-sm"><td class="px-2 py-1">${product?.nombre || "Producto"}</td><td class="px-2 py-1 text-right">${item.cantidad}</td><td class="px-2 py-1 text-right">${formatCurrency(item.precio)}</td><td class="px-2 py-1 text-right">${formatCurrency(item.cantidad * item.precio)}</td></tr>`;
+      }).join("");
+
+      const div = document.createElement("div");
+      div.className = "modal-content max-w-2xl";
+      div.innerHTML = `
+        <div class="bg-white border-4 border-slate-900 p-6 rounded-lg">
+          <div class="text-center mb-4 pb-3 border-b-2 border-dashed">
+            <h2 class="text-2xl font-bold">FACTURA ELECTRONICA</h2>
+            <p class="text-sm text-slate-600">Mujer Magica - Belleza y Cosmética</p>
+            <p class="text-xs text-slate-500">NIT: 900.123.456-7</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+            <div>
+              <p class="font-semibold">FACTURA:</p>
+              <p class="text-lg font-bold">${sale.id}</p>
+              <p class="font-semibold mt-2">FECHA:</p>
+              <p>${formatDate(sale.fecha)}</p>
+            </div>
+            <div class="text-right">
+              <p class="font-semibold">CLIENTE:</p>
+              <p>${customer ? customer.nombre : "CONSUMIDOR FINAL"}</p>
+              ${customer ? `<p class="text-xs text-slate-600">${customer.documento}</p>` : ""}
+              <p class="font-semibold mt-2">METODO PAGO:</p>
+              <p>${sale.metodoPago}</p>
+            </div>
+          </div>
+
+          <table class="w-full mb-4 text-sm border-collapse">
+            <thead class="bg-slate-900 text-white">
+              <tr>
+                <th class="px-2 py-1 text-left">Descripcion</th>
+                <th class="px-2 py-1 text-right">Cantidad</th>
+                <th class="px-2 py-1 text-right">Precio Unitario</th>
+                <th class="px-2 py-1 text-right">Subtotal</th>
+              </tr>
+            </thead>
+            <tbody>${itemsHtml}</tbody>
+          </table>
+
+          <div class="bg-slate-50 p-3 rounded-lg mb-4 text-sm space-y-1">
+            <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(sale.subtotal)}</span></div>
+            <div class="flex justify-between"><span>IVA (19%):</span><span class="font-semibold">${formatCurrency(sale.iva)}</span></div>
+            <div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">TOTAL:</span><span class="font-bold text-lg">${formatCurrency(sale.total)}</span></div>
+          </div>
+
+          <div class="text-center mb-4 p-3 bg-blue-50 rounded-lg">
+            <p class="text-xs font-semibold mb-1">CODIGO QR</p>
+            <p class="font-mono text-sm bg-white p-2 rounded border">█▀█▀█▀█▀█</p>
+            <p class="text-xs mt-1">Escanea para verificar</p>
+          </div>
+
+          <div class="text-center text-xs text-slate-600 mb-4">
+            <p>Gracias por su compra</p>
+            <p>Vuelve pronto a Mujer Magica</p>
+          </div>
+
+          <div class="flex gap-2">
+            <button type="button" id="btnPrintInvoice" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Imprimir</button>
+            <button type="button" id="btnDownloadInvoice" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Descargar PDF</button>
+            <button type="button" id="btnCloseInvoice" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cerrar</button>
+          </div>
+        </div>
+      `;
+      $modalContent.innerHTML = "";
+      $modalContent.appendChild(div);
+      $modal.classList.add("active");
+
+      document.getElementById("btnPrintInvoice").addEventListener("click", () => {
+        window.print();
+      });
+
+      document.getElementById("btnDownloadInvoice").addEventListener("click", () => {
+        showToast("PDF descargado (simulado)", "success");
+      });
+
+      document.getElementById("btnCloseInvoice").addEventListener("click", () => {
+        $modal.classList.remove("active");
+        renderView();
+      });
+    }
+
+      $sidebar.addEventListener("click", e => {
+        const t = e.target.closest("[data-route]");
+        if (!t) return;
+        appState.currentRoute = t.dataset.route;
+        renderView();
+      });
+      $search.addEventListener("input", e => {
+        appState.searchTerm = e.target.value;
+        renderView();
+      });
+      $quickAction.addEventListener("click", () => showToast("Fase 1+2+3 con POS CRUD completada", "success"));
+      $modal.addEventListener("click", e => { if (e.target === $modal) $modal.classList.remove("active"); });
+    }
+
+    function showEditProductModal(product) {
+      const isNew = !product;
+      const title = isNew ? "Nuevo Producto" : `Editar ${product.nombre}`;
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `<h3 class="text-lg font-bold mb-4">${title}</h3><form id="productForm" class="space-y-3"><input type="hidden" id="productId" value="${product?.id || ""}" /><input type="text" id="productName" placeholder="Nombre" value="${product?.nombre || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required /><select id="productCategory" class="w-full px-3 py-2 border rounded-lg text-sm"><option>-- Categoria --</option><option value="Capilar" ${product?.categoria === "Capilar" ? "selected" : ""}>Capilar</option><option value="Maquillaje" ${product?.categoria === "Maquillaje" ? "selected" : ""}>Maquillaje</option><option value="Corporal" ${product?.categoria === "Corporal" ? "selected" : ""}>Corporal</option></select><select id="productBrand" class="w-full px-3 py-2 border rounded-lg text-sm"><option>-- Marca --</option>${db.brands.map(b => `<option value="${b}" ${product?.marca === b ? "selected" : ""}>${b}</option>`).join("")}</select><input type="number" id="productPrice" placeholder="Precio" value="${product?.precioVentaDetal || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required /><input type="number" id="productStock" placeholder="Stock" value="${product?.stockActual || 0}" class="w-full px-3 py-2 border rounded-lg text-sm" /><div class="flex gap-2 pt-4"><button type="button" id="btnCancel" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cancelar</button><button type="submit" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Guardar</button></div></form>`;
+      $modalContent.innerHTML = "";
+      $modalContent.appendChild(div);
+      $modal.classList.add("active");
+
+      document.getElementById("productForm").addEventListener("submit", e => {
+        e.preventDefault();
+        const id = document.getElementById("productId").value;
+        const name = document.getElementById("productName").value;
+        const cat = document.getElementById("productCategory").value;
+        const brand = document.getElementById("productBrand").value;
+        const price = Number(document.getElementById("productPrice").value);
+        const stock = Number(document.getElementById("productStock").value);
+
+        if (isNew) {
+          db.products.push({ id: uid("prod"), nombre: name, descripcion: name, categoria: cat, marca: brand, proveedor: db.providers[0].nombre, imagen: `https://picsum.photos/seed/${name}/240/240`, sku: `MM-${String(db.products.length+1).padStart(4,"0")}`, codigoBarras: `77000${String(db.products.length+1).padStart(8,"0")}`, precioCompra: price*0.7, precioVentaMayorista: price*0.85, precioVentaDetal: price, costoPromedio: price*0.7, utilidad: price - price*0.7, iva: 19, stockActual: stock, stockMinimo: 8, stockMaximo: 80, ubicacion: "A1-01", fechaIngreso: today, fechaUltimaCompra: today, activo: true });
+          showToast("Producto creado", "success");
+        } else {
+          const idx = db.products.findIndex(p => p.id === id);
+          if (idx !== -1) {
+            db.products[idx].nombre = name;
+            db.products[idx].categoria = cat;
+            db.products[idx].marca = brand;
+            db.products[idx].precioVentaDetal = price;
+            db.products[idx].stockActual = stock;
+            showToast("Producto actualizado", "success");
+          }
+        }
+        $modal.classList.remove("active");
+        renderView();
+      });
+      document.getElementById("btnCancel").addEventListener("click", () => { $modal.classList.remove("active"); });
+    }
+
+    function showEditProviderModal(provider) {
+      const isNew = !provider;
+      const title = isNew ? "Nuevo Proveedor" : `Editar ${provider.nombre}`;
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `<h3 class="text-lg font-bold mb-4">${title}</h3><form id="providerForm" class="space-y-3"><input type="hidden" id="providerId" value="${provider?.id || ""}" /><input type="text" id="providerName" placeholder="Nombre" value="${provider?.nombre || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required /><input type="tel" id="providerPhone" placeholder="Telefono" value="${provider?.telefono || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" /><input type="email" id="providerEmail" placeholder="Correo" value="${provider?.correo || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" /><input type="text" id="providerCity" placeholder="Ciudad" value="${provider?.ciudad || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" /><div class="flex gap-2 pt-4"><button type="button" id="btnCancel" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cancelar</button><button type="submit" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Guardar</button></div></form>`;
+      $modalContent.innerHTML = "";
+      $modalContent.appendChild(div);
+      $modal.classList.add("active");
+
+      document.getElementById("providerForm").addEventListener("submit", e => {
+        e.preventDefault();
+        const id = document.getElementById("providerId").value;
+        const name = document.getElementById("providerName").value;
+        const phone = document.getElementById("providerPhone").value;
+        const email = document.getElementById("providerEmail").value;
+        const city = document.getElementById("providerCity").value;
+
+        if (isNew) {
+          db.providers.push({ id: uid("prov"), nombre: name, telefono: phone, correo: email, direccion: "", ciudad: city, contacto: "Contacto", productos: [] });
+          showToast("Proveedor creado", "success");
+        } else {
+          const idx = db.providers.findIndex(p => p.id === id);
+          if (idx !== -1) {
+            db.providers[idx].nombre = name;
+            db.providers[idx].telefono = phone;
+            db.providers[idx].correo = email;
+            db.providers[idx].ciudad = city;
+            showToast("Proveedor actualizado", "success");
+          }
+        }
+        $modal.classList.remove("active");
+        renderView();
+      });
+      document.getElementById("btnCancel").addEventListener("click", () => { $modal.classList.remove("active"); });
+    }
+
+    function showEditCustomerModal(customer) {
+      const isNew = !customer;
+      const title = isNew ? "Nuevo Cliente" : `Editar ${customer.nombre}`;
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `<h3 class="text-lg font-bold mb-4">${title}</h3><form id="customerForm" class="space-y-3"><input type="hidden" id="customerId" value="${customer?.id || ""}" /><input type="text" id="customerName" placeholder="Nombre" value="${customer?.nombre || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required /><input type="text" id="customerDoc" placeholder="Documento" value="${customer?.documento || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" /><input type="tel" id="customerPhone" placeholder="Telefono" value="${customer?.telefono || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" /><input type="email" id="customerEmail" placeholder="Correo" value="${customer?.correo || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" /><div class="flex gap-2 pt-4"><button type="button" id="btnCancel" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cancelar</button><button type="submit" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Guardar</button></div></form>`;
+      $modalContent.innerHTML = "";
+      $modalContent.appendChild(div);
+      $modal.classList.add("active");
+
+      document.getElementById("customerForm").addEventListener("submit", e => {
+        e.preventDefault();
+        const id = document.getElementById("customerId").value;
+        const name = document.getElementById("customerName").value;
+        const doc = document.getElementById("customerDoc").value;
+        const phone = document.getElementById("customerPhone").value;
+        const email = document.getElementById("customerEmail").value;
+
+        if (isNew) {
+          db.customers.push({ id: uid("cli"), nombre: name, documento: doc, telefono: phone, correo: email, direccion: "" });
+          showToast("Cliente creado", "success");
+        } else {
+          const idx = db.customers.findIndex(c => c.id === id);
+          if (idx !== -1) {
+            db.customers[idx].nombre = name;
+            db.customers[idx].documento = doc;
+            db.customers[idx].telefono = phone;
+            db.customers[idx].correo = email;
+            showToast("Cliente actualizado", "success");
+          }
+        }
+        $modal.classList.remove("active");
+        renderView();
+      });
+      document.getElementById("btnCancel").addEventListener("click", () => { $modal.classList.remove("active"); });
+    }
+
+    // MAIN
+    function bindEvents() {
+      $sidebar.addEventListener("click", e => {
+        const t = e.target.closest("[data-route]");
+        if (!t) return;
+        appState.currentRoute = t.dataset.route;
+        renderView();
+      });
+      $search.addEventListener("input", e => {
+        appState.searchTerm = e.target.value;
+        renderView();
+      });
+      $quickAction.addEventListener("click", () => showToast("Fase 1+2 CRUD completada", "success"));
+      $modal.addEventListener("click", e => { if (e.target === $modal) $modal.classList.remove("active"); });
+    }
+
+    function startClock() {
+      const update = () => { $clock.textContent = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()); };
+      update();
+      setInterval(update, 1000);
+    }
+
+    function bootstrap() {
+      renderSidebar();
+      renderView();
+      bindEvents();
+      startClock();
+    }
+
+    bootstrap();
+  </script>
+</body>
+</html>

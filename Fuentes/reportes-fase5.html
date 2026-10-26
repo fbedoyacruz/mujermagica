@@ -1,0 +1,569 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Reportes Mujer Magica - Fase 5 | Analytics Avanzado</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --brand-primary: #f97316; --brand-secondary: #14b8a6; }
+    body { font-family: "Manrope", sans-serif; }
+    h1, h2, h3, h4, h5, h6 { font-family: "Sora", sans-serif; }
+    .app-bg { background: radial-gradient(circle at 12% 10%, rgba(249, 115, 22, 0.16), transparent 28%), radial-gradient(circle at 88% 20%, rgba(20, 184, 166, 0.16), transparent 34%), linear-gradient(145deg, #fff7ed, #ecfeff 50%, #eff6ff); }
+    .panel-glass { backdrop-filter: blur(18px); background: linear-gradient(165deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.66)); box-shadow: 0 18px 44px -18px rgba(15, 23, 42, 0.28); }
+    .brand-gradient { background: linear-gradient(135deg, #ea580c, #f59e0b 50%, #0f766e 100%); }
+    .nav-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border-radius: 14px; color: #334155; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 180ms ease; border: 1px solid transparent; }
+    .nav-link:hover { background: rgba(255, 255, 255, 0.85); }
+    .nav-link.active { background: rgba(15, 23, 42, 0.92); color: #fff; }
+    .kpi-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.84); padding: 18px; }
+    .view-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.86); padding: 18px; }
+    .chart-bar { height: 20px; border-radius: 4px; background: linear-gradient(90deg, #0f766e, #14b8a6); display: inline-block; transition: width 300ms ease; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 40; }
+    .modal-backdrop.active { display: flex; align-items: center; justify-content: center; }
+    .modal-content { background: white; border-radius: 20px; padding: 24px; max-width: 700px; width: 90%; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); max-height: 90vh; overflow-y-auto; }
+    .toast-item { border-radius: 14px; color: #fff; font-size: 13px; padding: 10px 14px; animation: slide-up 220ms ease; }
+    @keyframes slide-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .rank-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 28px; height: 28px; border-radius: 50%; font-weight: bold; font-size: 12px; }
+    .rank-1 { background: linear-gradient(135deg, #fbbf24, #f59e0b); color: white; }
+    .rank-2 { background: linear-gradient(135deg, #c7d2fe, #a5b4fc); color: #3730a3; }
+    .rank-3 { background: linear-gradient(135deg, #fed7aa, #fb923c); color: white; }
+    .metric-up { color: #10b981; }
+    .metric-down { color: #ef4444; }
+    .trend-item { padding: 10px; border-radius: 12px; background: linear-gradient(135deg, rgba(20, 184, 166, 0.1), rgba(15, 118, 110, 0.1)); border-left: 3px solid #14b8a6; }
+  </style>
+</head>
+<body class="app-bg text-slate-800">
+  <div class="min-h-screen p-4 md:p-6">
+    <div class="mx-auto grid max-w-[1440px] grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
+      <!-- SIDEBAR -->
+      <aside class="panel-glass rounded-3xl border border-white/60 h-fit">
+        <div class="brand-gradient px-6 py-7 text-white">
+          <p class="text-xs uppercase tracking-[0.2em] text-white/80">Mujer Magica</p>
+          <h1 class="text-2xl font-bold">Reportes Fase 5</h1>
+          <p class="mt-2 text-sm text-white/90">Analytics Avanzado</p>
+        </div>
+        <nav id="sidebarNav" class="space-y-2 px-4 py-4"></nav>
+        <div class="px-4 pb-5 pt-3">
+          <button id="exportBtn" class="w-full rounded-2xl bg-emerald-600 text-white px-4 py-3 text-sm font-semibold flex items-center justify-center gap-2">📊 Exportar datos</button>
+          <div class="rounded-2xl bg-slate-900 text-white px-4 py-2 mt-2 text-xs text-center">
+            <p id="liveClock">--:--:--</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- MAIN -->
+      <main class="space-y-4">
+        <header class="panel-glass rounded-3xl border border-white/60 p-4 md:p-5">
+          <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div><h2 id="viewTitle" class="text-2xl font-bold">Reportes</h2></div>
+            <div class="flex gap-2 flex-col md:flex-row">
+              <select id="periodoSelect" class="rounded-xl border border-slate-200 bg-white/80 px-3 py-2.5 text-sm">
+                <option value="todo">Todo el período</option>
+                <option value="30">Últimos 30 días</option>
+                <option value="7">Últimos 7 días</option>
+                <option value="1">Hoy</option>
+              </select>
+              <input id="globalSearch" class="rounded-xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm md:w-72" placeholder="Buscar..." />
+            </div>
+          </div>
+        </header>
+        <section id="appView" class="space-y-4"></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toastHost" class="pointer-events-none fixed bottom-5 right-5 z-50 space-y-2"></div>
+  <div id="modalBackdrop" class="modal-backdrop"><div id="modalContent"></div></div>
+
+  <script>
+    // ==================== UTILIDADES ====================
+    const formatCurrency = (v) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v || 0);
+    const formatDate = (d) => { const date = new Date(d); return Number.isNaN(date.getTime()) ? "--" : new Intl.DateTimeFormat("es-CO", { year: "numeric", month: "short", day: "2-digit" }).format(date); };
+    const uid = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 10)}`;
+    const showToast = (m, t = "info") => { const h = document.getElementById("toastHost"); if (!h) return; const p = { info: "bg-slate-900", success: "bg-emerald-700", warning: "bg-amber-700", danger: "bg-red-700" }; const e = document.createElement("div"); e.className = `toast-item ${p[t] || p.info}`; e.textContent = m; h.appendChild(e); setTimeout(() => e.remove(), 2600); };
+
+    // ==================== BASE DE DATOS ====================
+    const today = new Date().toISOString();
+    const products = [
+      { id: "prod_001", nombre: "Shampoo Kativa", categoria: "Capilar", marca: "Kativa", precioVentaDetal: 29000, precioCompra: 14500, stockActual: 24, imagen: "https://picsum.photos/seed/Shampoo/200/200" },
+      { id: "prod_002", nombre: "Acondicionador Wella", categoria: "Capilar", marca: "Wella", precioVentaDetal: 28000, precioCompra: 14000, stockActual: 20, imagen: "https://picsum.photos/seed/Acondicionador/200/200" },
+      { id: "prod_003", nombre: "Mantequilla Capilar", categoria: "Capilar", marca: "Milagros", precioVentaDetal: 36000, precioCompra: 18000, stockActual: 3, imagen: "https://picsum.photos/seed/Mantequilla/200/200" },
+      { id: "prod_004", nombre: "Sombras Premium", categoria: "Maquillaje", marca: "Loreal", precioVentaDetal: 39000, precioCompra: 19500, stockActual: 11, imagen: "https://picsum.photos/seed/Sombras/200/200" },
+      { id: "prod_005", nombre: "Brillos Labiales", categoria: "Maquillaje", marca: "Angelous", precioVentaDetal: 22000, precioCompra: 11000, stockActual: 2, imagen: "https://picsum.photos/seed/Brillos/200/200" },
+      { id: "prod_006", nombre: "Perfume Capilar", categoria: "Capilar", marca: "Alfaparf", precioVentaDetal: 26000, precioCompra: 13000, stockActual: 9, imagen: "https://picsum.photos/seed/Perfume/200/200" },
+      { id: "prod_007", nombre: "Polvo Compacto", categoria: "Maquillaje", marca: "CABA", precioVentaDetal: 34500, precioCompra: 17250, stockActual: 6, imagen: "https://picsum.photos/seed/Polvo/200/200" },
+      { id: "prod_008", nombre: "Repolarizador", categoria: "Capilar", marca: "Salvatore", precioVentaDetal: 48000, precioCompra: 24000, stockActual: 7, imagen: "https://picsum.photos/seed/Repolarizador/200/200" }
+    ];
+
+    const customers = [
+      { id: "cli_001", nombre: "Mariana Gil", documento: "1023456789" },
+      { id: "cli_002", nombre: "Diana Toro", documento: "52999887" }
+    ];
+
+    // DATOS DE PRUEBA - Ventas simuladas para reportes
+    const generateSampleSales = () => {
+      const sales = [];
+      for (let i = 0; i < 45; i++) {
+        const daysAgo = Math.floor(Math.random() * 30);
+        const date = new Date();
+        date.setDate(date.getDate() - daysAgo);
+        const productId = products[Math.floor(Math.random() * products.length)].id;
+        const product = products.find(p => p.id === productId);
+        const cantidad = Math.floor(Math.random() * 5) + 1;
+        const subtotal = cantidad * product.precioVentaDetal;
+        const iva = subtotal * 0.19;
+
+        sales.push({
+          id: uid("sale"),
+          fecha: date.toISOString(),
+          clienteId: Math.random() > 0.6 ? customers[Math.floor(Math.random() * customers.length)].id : null,
+          items: [{ productId, cantidad, precio: product.precioVentaDetal }],
+          subtotal,
+          iva,
+          total: subtotal + iva,
+          metodoPago: ["Efectivo", "Tarjeta", "Transferencia"][Math.floor(Math.random() * 3)]
+        });
+      }
+      return sales;
+    };
+
+    const db = {
+      products,
+      customers,
+      sales: generateSampleSales()
+    };
+
+    // ==================== STATE ====================
+    const appState = {
+      currentRoute: "resumen",
+      searchTerm: "",
+      periodo: "todo"
+    };
+
+    // ==================== FUNCIONES DE LÓGICA ====================
+    function filterSalesByPeriod(sales, periodo) {
+      const now = new Date();
+      return sales.filter(sale => {
+        const saleDate = new Date(sale.fecha);
+        if (periodo === "todo") return true;
+        if (periodo === "30") return (now - saleDate) / (1000 * 60 * 60 * 24) <= 30;
+        if (periodo === "7") return (now - saleDate) / (1000 * 60 * 60 * 24) <= 7;
+        if (periodo === "1") return saleDate.toDateString() === now.toDateString();
+        return true;
+      });
+    }
+
+    function calcularMetricasGenerales(sales) {
+      const totalVentas = sales.reduce((s, sale) => s + sale.total, 0);
+      const totalCosto = sales.reduce((s, sale) => s + sale.items.reduce((is, item) => is + item.cantidad * db.products.find(p => p.id === item.productId).precioCompra, 0), 0);
+      const gananciaBruta = totalVentas - totalCosto;
+      const margenPromedio = totalVentas > 0 ? (gananciaBruta / totalVentas) * 100 : 0;
+      const cantVentas = sales.length;
+      const ventaPromedio = cantVentas > 0 ? totalVentas / cantVentas : 0;
+
+      return { totalVentas, totalCosto, gananciaBruta, margenPromedio, cantVentas, ventaPromedio };
+    }
+
+    function productosMasVendidos(sales, limite = 5) {
+      const productMap = {};
+      sales.forEach(sale => {
+        sale.items.forEach(item => {
+          if (!productMap[item.productId]) {
+            productMap[item.productId] = { cantidad: 0, ventas: 0, costo: 0 };
+          }
+          productMap[item.productId].cantidad += item.cantidad;
+          productMap[item.productId].ventas += item.cantidad * item.precio;
+          productMap[item.productId].costo += item.cantidad * db.products.find(p => p.id === item.productId).precioCompra;
+        });
+      });
+
+      return Object.entries(productMap)
+        .map(([productId, data]) => {
+          const product = db.products.find(p => p.id === productId);
+          return {
+            ...product,
+            ...data,
+            ganancia: data.ventas - data.costo,
+            margen: ((data.ventas - data.costo) / data.ventas) * 100
+          };
+        })
+        .sort((a, b) => b.cantidad - a.cantidad)
+        .slice(0, limite);
+    }
+
+    function clientesMasActivos(sales, limite = 5) {
+      const clientMap = {};
+      sales.forEach(sale => {
+        if (sale.clienteId) {
+          if (!clientMap[sale.clienteId]) {
+            clientMap[sale.clienteId] = { compras: 0, total: 0 };
+          }
+          clientMap[sale.clienteId].compras += 1;
+          clientMap[sale.clienteId].total += sale.total;
+        }
+      });
+
+      return Object.entries(clientMap)
+        .map(([clienteId, data]) => {
+          const customer = db.customers.find(c => c.id === clienteId);
+          return { ...customer, ...data, promedioCompra: data.total / data.compras };
+        })
+        .sort((a, b) => b.total - a.total)
+        .slice(0, limite);
+    }
+
+    function ventasPorCategoria(sales) {
+      const catMap = {};
+      sales.forEach(sale => {
+        sale.items.forEach(item => {
+          const product = db.products.find(p => p.id === item.productId);
+          if (!catMap[product.categoria]) {
+            catMap[product.categoria] = { cantidad: 0, ventas: 0, costo: 0 };
+          }
+          catMap[product.categoria].cantidad += item.cantidad;
+          catMap[product.categoria].ventas += item.cantidad * item.precio;
+          catMap[product.categoria].costo += item.cantidad * db.products.find(p => p.id === item.productId).precioCompra;
+        });
+      });
+
+      return Object.entries(catMap).map(([cat, data]) => ({
+        categoria: cat,
+        ...data,
+        ganancia: data.ventas - data.costo,
+        margen: ((data.ventas - data.costo) / data.ventas) * 100
+      }));
+    }
+
+    function ventasPorDia(sales) {
+      const dayMap = {};
+      sales.forEach(sale => {
+        const dateStr = new Date(sale.fecha).toISOString().split("T")[0];
+        if (!dayMap[dateStr]) dayMap[dateStr] = { cantidad: 0, total: 0 };
+        dayMap[dateStr].cantidad += 1;
+        dayMap[dateStr].total += sale.total;
+      });
+
+      return Object.entries(dayMap)
+        .map(([date, data]) => ({ fecha: date, ...data }))
+        .sort((a, b) => a.fecha.localeCompare(b.fecha))
+        .slice(-14);
+    }
+
+    // ==================== RENDERIZADO ====================
+    function renderResumen(st, search = "") {
+      const salesFiltered = filterSalesByPeriod(st.sales, appState.periodo);
+      const metricas = calcularMetricasGenerales(salesFiltered);
+      const topProductos = productosMasVendidos(salesFiltered, 5);
+      const topClientes = clientesMasActivos(salesFiltered, 5);
+      const porCategoria = ventasPorCategoria(salesFiltered);
+
+      const maxVentas = Math.max(...topProductos.map(p => p.cantidad), 1);
+      const productRows = topProductos.map((p, idx) => {
+        const barWidth = (p.cantidad / maxVentas) * 100;
+        return `
+          <div class="flex items-center gap-3 mb-3">
+            <span class="rank-badge rank-${idx + 1}">${idx + 1}</span>
+            <div class="flex-1">
+              <div class="flex justify-between mb-1">
+                <p class="font-semibold text-sm">${p.nombre}</p>
+                <span class="text-xs font-bold">${p.cantidad} units</span>
+              </div>
+              <div class="w-full bg-slate-100 rounded-full h-2"><div class="chart-bar" style="width:${barWidth}%"></div></div>
+              <div class="flex justify-between text-xs text-slate-500 mt-1">
+                <span>${formatCurrency(p.ventas)}</span>
+                <span class="metric-up">${p.margen.toFixed(1)}% margen</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      const clienteRows = topClientes.map((c, idx) => `
+        <tr class="border-b text-sm">
+          <td class="px-3 py-2"><span class="rank-badge rank-${idx + 1}">${idx + 1}</span></td>
+          <td class="px-3 py-2 font-semibold">${c.nombre}</td>
+          <td class="px-3 py-2 text-right">${c.compras}</td>
+          <td class="px-3 py-2 text-right">${formatCurrency(c.total)}</td>
+          <td class="px-3 py-2 text-right">${formatCurrency(c.promedioCompra)}</td>
+        </tr>
+      `).join("");
+
+      const catRows = porCategoria.map(c => `
+        <tr class="border-b text-sm">
+          <td class="px-3 py-2 font-semibold">${c.categoria}</td>
+          <td class="px-3 py-2 text-right">${c.cantidad}</td>
+          <td class="px-3 py-2 text-right">${formatCurrency(c.ventas)}</td>
+          <td class="px-3 py-2 text-right">${formatCurrency(c.costo)}</td>
+          <td class="px-3 py-2 text-right metric-up">${formatCurrency(c.ganancia)}</td>
+          <td class="px-3 py-2 text-right font-semibold">${c.margen.toFixed(1)}%</td>
+        </tr>
+      `).join("");
+
+      return `
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.totalVentas)}</p><p class="text-xs text-slate-500 mt-1">${metricas.cantVentas} ventas</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total costo</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.totalCosto)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Ganancia bruta</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(metricas.gananciaBruta)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Margen promedio</p><p class="mt-2 text-2xl font-bold">${metricas.margenPromedio.toFixed(1)}%</p></div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="view-card">
+            <h3 class="text-lg font-bold mb-4">🏆 Top 5 productos más vendidos</h3>
+            <div>${productRows}</div>
+          </div>
+
+          <div class="view-card">
+            <h3 class="text-lg font-bold mb-4">👥 Top 5 clientes</h3>
+            <div class="overflow-x-auto rounded-lg border">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 border-b">
+                  <tr><th class="px-3 py-2 text-left">#</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-right">Compras</th><th class="px-3 py-2 text-right">Total</th><th class="px-3 py-2 text-right">Promedio</th></tr>
+                </thead>
+                <tbody>${clienteRows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+
+        <div class="view-card">
+          <h3 class="text-lg font-bold mb-4">📊 Ventas por categoría</h3>
+          <div class="overflow-x-auto rounded-lg border">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 border-b text-xs uppercase">
+                <tr><th class="px-3 py-2 text-left">Categoría</th><th class="px-3 py-2 text-right">Qty</th><th class="px-3 py-2 text-right">Ventas</th><th class="px-3 py-2 text-right">Costo</th><th class="px-3 py-2 text-right">Ganancia</th><th class="px-3 py-2 text-right">Margen</th></tr>
+              </thead>
+              <tbody>${catRows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderTendencias(st, search = "") {
+      const salesFiltered = filterSalesByPeriod(st.sales, appState.periodo);
+      const ventasDia = ventasPorDia(salesFiltered);
+      const maxVentas = Math.max(...ventasDia.map(d => d.total), 1);
+
+      const chartRows = ventasDia.map(day => {
+        const barWidth = (day.total / maxVentas) * 100;
+        return `
+          <div class="flex items-center gap-3 mb-4">
+            <p class="w-20 text-sm font-semibold">${formatDate(day.fecha)}</p>
+            <div class="flex-1">
+              <div class="bg-slate-100 rounded-full h-4 mb-1"><div class="chart-bar" style="width:${barWidth}%"></div></div>
+            </div>
+            <div class="text-right w-32">
+              <p class="font-bold text-sm">${formatCurrency(day.total)}</p>
+              <p class="text-xs text-slate-500">${day.cantidad} ventas</p>
+            </div>
+          </div>
+        `;
+      }).join("");
+
+      const metricas = calcularMetricasGenerales(salesFiltered);
+      const tendencia = ventasDia.length > 1 ? (ventasDia[ventasDia.length - 1].total - ventasDia[0].total) / ventasDia[0].total * 100 : 0;
+
+      return `
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Promedio diario</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.ventaPromedio)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Día con mayor venta</p><p class="mt-2 text-2xl font-bold">${formatCurrency(Math.max(...ventasDia.map(d => d.total)))}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Tendencia</p><p class="mt-2 text-2xl font-bold ${tendencia >= 0 ? 'metric-up' : 'metric-down'}">${tendencia >= 0 ? '+' : ''}${tendencia.toFixed(1)}%</p></div>
+        </div>
+
+        <div class="view-card">
+          <h3 class="text-lg font-bold mb-6">📈 Ventas últimos 14 días</h3>
+          <div>${chartRows}</div>
+        </div>
+      `;
+    }
+
+    function renderMargenAnalisis(st, search = "") {
+      const salesFiltered = filterSalesByPeriod(st.sales, appState.periodo);
+      const topProductos = productosMasVendidos(salesFiltered, 10);
+      const porCategoria = ventasPorCategoria(salesFiltered);
+
+      const margenRows = topProductos.map(p => `
+        <tr class="border-b text-sm hover:bg-slate-50">
+          <td class="px-3 py-2 font-semibold">${p.nombre}</td>
+          <td class="px-3 py-2">${p.categoria}</td>
+          <td class="px-3 py-2 text-right">${formatCurrency(p.ventas)}</td>
+          <td class="px-3 py-2 text-right">${formatCurrency(p.costo)}</td>
+          <td class="px-3 py-2 text-right metric-up font-bold">${formatCurrency(p.ganancia)}</td>
+          <td class="px-3 py-2 text-right font-bold">${p.margen.toFixed(1)}%</td>
+        </tr>
+      `).join("");
+
+      const catMargenRows = porCategoria.sort((a, b) => b.margen - a.margen).map(c => `
+        <tr class="border-b text-sm">
+          <td class="px-3 py-2 font-semibold">${c.categoria}</td>
+          <td class="px-3 py-2 text-right">${formatCurrency(c.ventas)}</td>
+          <td class="px-3 py-2 text-right">${formatCurrency(c.costo)}</td>
+          <td class="px-3 py-2 text-right metric-up">${formatCurrency(c.ganancia)}</td>
+          <td class="px-3 py-2 text-right font-bold text-lg">${c.margen.toFixed(1)}%</td>
+        </tr>
+      `).join("");
+
+      return `
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="view-card">
+            <h3 class="text-lg font-bold mb-4">💰 Margen por producto (Top 10)</h3>
+            <div class="overflow-x-auto rounded-lg border">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 border-b text-xs uppercase">
+                  <tr><th class="px-3 py-2 text-left">Producto</th><th class="px-3 py-2 text-left">Cat</th><th class="px-3 py-2 text-right">Ventas</th><th class="px-3 py-2 text-right">Costo</th><th class="px-3 py-2 text-right">Ganancia</th><th class="px-3 py-2 text-right">%</th></tr>
+                </thead>
+                <tbody>${margenRows}</tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="view-card">
+            <h3 class="text-lg font-bold mb-4">📊 Margen por categoría</h3>
+            <div class="overflow-x-auto rounded-lg border">
+              <table class="min-w-full text-sm">
+                <thead class="bg-slate-50 border-b text-xs uppercase">
+                  <tr><th class="px-3 py-2 text-left">Categoría</th><th class="px-3 py-2 text-right">Ventas</th><th class="px-3 py-2 text-right">Costo</th><th class="px-3 py-2 text-right">Ganancia</th><th class="px-3 py-2 text-right">Margen</th></tr>
+                </thead>
+                <tbody>${catMargenRows}</tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderInventarioValor(st, search = "") {
+      const valorInventario = st.products.reduce((s, p) => s + p.stockActual * p.precioCompra, 0);
+      const valorVenta = st.products.reduce((s, p) => s + p.stockActual * p.precioVentaDetal, 0);
+      const margenPotencial = valorVenta - valorInventario;
+
+      const productRows = st.products
+        .map(p => ({
+          ...p,
+          valorCosto: p.stockActual * p.precioCompra,
+          valorVenta: p.stockActual * p.precioVentaDetal,
+          ganancia: (p.stockActual * p.precioVentaDetal) - (p.stockActual * p.precioCompra)
+        }))
+        .sort((a, b) => b.valorCosto - a.valorCosto)
+        .map(p => `
+          <tr class="border-b text-sm hover:bg-slate-50">
+            <td class="px-3 py-2 font-semibold">${p.nombre}</td>
+            <td class="px-3 py-2 text-right">${p.stockActual}</td>
+            <td class="px-3 py-2 text-right">${formatCurrency(p.precioCompra)}</td>
+            <td class="px-3 py-2 text-right font-semibold">${formatCurrency(p.valorCosto)}</td>
+            <td class="px-3 py-2 text-right">${formatCurrency(p.precioVentaDetal)}</td>
+            <td class="px-3 py-2 text-right font-semibold">${formatCurrency(p.valorVenta)}</td>
+            <td class="px-3 py-2 text-right metric-up">${formatCurrency(p.ganancia)}</td>
+          </tr>
+        `).join("");
+
+      return `
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Valor en costo</p><p class="mt-2 text-2xl font-bold">${formatCurrency(valorInventario)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Valor en venta</p><p class="mt-2 text-2xl font-bold">${formatCurrency(valorVenta)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Ganancia potencial</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(margenPotencial)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total productos</p><p class="mt-2 text-2xl font-bold">${st.products.reduce((s, p) => s + p.stockActual, 0)}</p></div>
+        </div>
+
+        <div class="view-card">
+          <h3 class="text-lg font-bold mb-4">📦 Valuación de inventario</h3>
+          <div class="overflow-x-auto rounded-lg border">
+            <table class="min-w-full text-sm">
+              <thead class="bg-slate-50 border-b text-xs uppercase">
+                <tr><th class="px-3 py-2 text-left">Producto</th><th class="px-3 py-2 text-right">Stock</th><th class="px-3 py-2 text-right">P.Costo</th><th class="px-3 py-2 text-right">V.Costo</th><th class="px-3 py-2 text-right">P.Venta</th><th class="px-3 py-2 text-right">V.Venta</th><th class="px-3 py-2 text-right">Ganancia Pot</th></tr>
+              </thead>
+              <tbody>${productRows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // ==================== FUNCIONES PRINCIPALES ====================
+    const routes = [
+      { id: "resumen", label: "Resumen", icon: "📊", title: "Resumen general", render: renderResumen },
+      { id: "tendencias", label: "Tendencias", icon: "📈", title: "Análisis de tendencias", render: renderTendencias },
+      { id: "margen", label: "Márgenes", icon: "💰", title: "Análisis de márgenes", render: renderMargenAnalisis },
+      { id: "inventario", label: "Valuación", icon: "📦", title: "Valuación de inventario", render: renderInventarioValor }
+    ];
+
+    function renderView() {
+      const route = routes.find(r => r.id === appState.currentRoute) || routes[0];
+      document.getElementById("viewTitle").textContent = route.title;
+      document.getElementById("appView").innerHTML = route.render(db, appState.searchTerm);
+      renderSidebar();
+    }
+
+    function renderSidebar() {
+      const nav = document.getElementById("sidebarNav");
+      nav.innerHTML = routes.map(r => {
+        const active = r.id === appState.currentRoute ? "active" : "";
+        return `<button onclick="cambiarRuta('${r.id}')" class="nav-link ${active}"><span>${r.icon}</span><span>${r.label}</span></button>`;
+      }).join("");
+    }
+
+    function cambiarRuta(rutaId) {
+      appState.currentRoute = rutaId;
+      renderView();
+    }
+
+    function exportarDatos() {
+      const metricas = calcularMetricasGenerales(filterSalesByPeriod(db.sales, appState.periodo));
+      const topProductos = productosMasVendidos(filterSalesByPeriod(db.sales, appState.periodo));
+      const topClientes = clientesMasActivos(filterSalesByPeriod(db.sales, appState.periodo));
+
+      const data = {
+        generado: new Date().toLocaleString("es-CO"),
+        periodo: appState.periodo,
+        resumen: metricas,
+        topProductos: topProductos.slice(0, 10),
+        topClientes: topClientes.slice(0, 10),
+        totalVentas: db.sales.length
+      };
+
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `reportes_${new Date().toISOString().split("T")[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      showToast("Datos exportados exitosamente", "success");
+    }
+
+    function startClock() {
+      const update = () => {
+        document.getElementById("liveClock").textContent = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+      };
+      update();
+      setInterval(update, 1000);
+    }
+
+    // ==================== EVENTOS ====================
+    document.getElementById("globalSearch").addEventListener("input", e => {
+      appState.searchTerm = e.target.value;
+      renderView();
+    });
+
+    document.getElementById("periodoSelect").addEventListener("change", e => {
+      appState.periodo = e.target.value;
+      renderView();
+    });
+
+    document.getElementById("exportBtn").addEventListener("click", exportarDatos);
+
+    document.getElementById("modalBackdrop").addEventListener("click", (e) => {
+      if (e.target === document.getElementById("modalBackdrop")) {
+        document.getElementById("modalBackdrop").classList.remove("active");
+      }
+    });
+
+    // ==================== INICIO ====================
+    renderView();
+    startClock();
+  </script>
+</body>
+</html>

@@ -1,0 +1,431 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>POS Mujer Magica - Fase 3 | Carrito, Pagos, Facturas</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Sora:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    :root { --brand-primary: #f97316; --brand-secondary: #14b8a6; }
+    body { font-family: "Manrope", sans-serif; }
+    h1, h2, h3, h4, h5, h6 { font-family: "Sora", sans-serif; }
+    .app-bg { background: radial-gradient(circle at 12% 10%, rgba(249, 115, 22, 0.16), transparent 28%), radial-gradient(circle at 88% 20%, rgba(20, 184, 166, 0.16), transparent 34%), linear-gradient(145deg, #fff7ed, #ecfeff 50%, #eff6ff); }
+    .panel-glass { backdrop-filter: blur(18px); background: linear-gradient(165deg, rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.66)); box-shadow: 0 18px 44px -18px rgba(15, 23, 42, 0.28); }
+    .brand-gradient { background: linear-gradient(135deg, #ea580c, #f59e0b 50%, #0f766e 100%); }
+    .nav-link { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border-radius: 14px; color: #334155; font-weight: 600; font-size: 14px; cursor: pointer; transition: all 180ms ease; border: 1px solid transparent; }
+    .nav-link:hover { background: rgba(255, 255, 255, 0.85); }
+    .nav-link.active { background: rgba(15, 23, 42, 0.92); color: #fff; }
+    .kpi-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.84); padding: 18px; }
+    .view-card { border-radius: 20px; border: 1px solid rgba(226, 232, 240, 0.9); background: rgba(255, 255, 255, 0.86); padding: 18px; }
+    .stock-badge { border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; }
+    .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 40; }
+    .modal-backdrop.active { display: flex; align-items: center; justify-content: center; }
+    .modal-content { background: white; border-radius: 20px; padding: 24px; max-width: 600px; width: 90%; box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3); max-height: 90vh; overflow-y-auto; }
+    .toast-item { border-radius: 14px; color: #fff; font-size: 13px; padding: 10px 14px; animation: slide-up 220ms ease; }
+    @keyframes slide-up { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    .cart-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 20px; height: 20px; padding: 0 6px; background: #ef4444; color: white; border-radius: 999px; font-size: 11px; font-weight: bold; }
+    .product-card { border: 1px solid #e2e8f0; border-radius: 12px; padding: 12px; text-align: center; cursor: pointer; transition: all 200ms ease; }
+    .product-card:hover { border-color: #0f766e; box-shadow: 0 4px 12px rgba(15, 118, 110, 0.15); }
+  </style>
+</head>
+<body class="app-bg text-slate-800">
+  <div class="min-h-screen p-4 md:p-6">
+    <div class="mx-auto grid max-w-[1440px] grid-cols-1 gap-4 lg:grid-cols-[280px_1fr]">
+      <!-- SIDEBAR -->
+      <aside class="panel-glass rounded-3xl border border-white/60 h-fit">
+        <div class="brand-gradient px-6 py-7 text-white">
+          <p class="text-xs uppercase tracking-[0.2em] text-white/80">Mujer Magica</p>
+          <h1 class="text-2xl font-bold">POS Fase 3</h1>
+          <p class="mt-2 text-sm text-white/90">Carrito + Pagos + Facturas</p>
+        </div>
+        <nav id="sidebarNav" class="space-y-2 px-4 py-4"></nav>
+        <div class="px-4 pb-5 pt-3">
+          <button id="cartBtn" class="w-full rounded-2xl bg-slate-900 text-white px-4 py-3 text-sm font-semibold flex items-center justify-center gap-2">🛒 Carrito <span class="cart-badge">0</span></button>
+          <div class="rounded-2xl bg-slate-900 text-white px-4 py-2 mt-2 text-xs text-center">
+            <p id="liveClock">--:--:--</p>
+          </div>
+        </div>
+      </aside>
+
+      <!-- MAIN -->
+      <main class="space-y-4">
+        <header class="panel-glass rounded-3xl border border-white/60 p-4 md:p-5">
+          <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div><h2 id="viewTitle" class="text-2xl font-bold">Punto de Venta</h2></div>
+            <input id="globalSearch" class="rounded-xl border border-slate-200 bg-white/80 px-4 py-2.5 text-sm md:w-72" placeholder="Buscar productos..." />
+          </div>
+        </header>
+        <section id="appView" class="space-y-4"></section>
+      </main>
+    </div>
+  </div>
+
+  <div id="toastHost" class="pointer-events-none fixed bottom-5 right-5 z-50 space-y-2"></div>
+  <div id="modalBackdrop" class="modal-backdrop"><div id="modalContent"></div></div>
+
+  <script>
+    // ==================== UTILIDADES ====================
+    const formatCurrency = (v) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v || 0);
+    const formatDate = (d) => { const date = new Date(d); return Number.isNaN(date.getTime()) ? "--" : new Intl.DateTimeFormat("es-CO", { year: "numeric", month: "short", day: "2-digit" }).format(date); };
+    const uid = (p = "id") => `${p}_${Math.random().toString(36).slice(2, 10)}`;
+    const showToast = (m, t = "info") => { const h = document.getElementById("toastHost"); if (!h) return; const p = { info: "bg-slate-900", success: "bg-emerald-700", warning: "bg-amber-700", danger: "bg-red-700" }; const e = document.createElement("div"); e.className = `toast-item ${p[t] || p.info}`; e.textContent = m; h.appendChild(e); setTimeout(() => e.remove(), 2600); };
+
+    // ==================== BASE DE DATOS ====================
+    const today = new Date().toISOString();
+    const products = [
+      { id: "prod_001", nombre: "Shampoo Kativa", categoria: "Capilar", marca: "Kativa", precioVentaDetal: 29000, stockActual: 24, imagen: "https://picsum.photos/seed/Shampoo/200/200" },
+      { id: "prod_002", nombre: "Acondicionador Wella", categoria: "Capilar", marca: "Wella", precioVentaDetal: 28000, stockActual: 20, imagen: "https://picsum.photos/seed/Acondicionador/200/200" },
+      { id: "prod_003", nombre: "Mantequilla Capilar", categoria: "Capilar", marca: "Milagros", precioVentaDetal: 36000, stockActual: 13, imagen: "https://picsum.photos/seed/Mantequilla/200/200" },
+      { id: "prod_004", nombre: "Sombras Premium", categoria: "Maquillaje", marca: "Loreal", precioVentaDetal: 39000, stockActual: 11, imagen: "https://picsum.photos/seed/Sombras/200/200" },
+      { id: "prod_005", nombre: "Brillos Labiales", categoria: "Maquillaje", marca: "Angelous", precioVentaDetal: 22000, stockActual: 28, imagen: "https://picsum.photos/seed/Brillos/200/200" },
+      { id: "prod_006", nombre: "Perfume Capilar", categoria: "Capilar", marca: "Alfaparf", precioVentaDetal: 26000, stockActual: 9, imagen: "https://picsum.photos/seed/Perfume/200/200" },
+      { id: "prod_007", nombre: "Polvo Compacto", categoria: "Maquillaje", marca: "CABA", precioVentaDetal: 34500, stockActual: 14, imagen: "https://picsum.photos/seed/Polvo/200/200" },
+      { id: "prod_008", nombre: "Repolarizador", categoria: "Capilar", marca: "Salvatore", precioVentaDetal: 48000, stockActual: 7, imagen: "https://picsum.photos/seed/Repolarizador/200/200" }
+    ];
+
+    const customers = [
+      { id: "cli_001", nombre: "Mariana Gil", documento: "1023456789" },
+      { id: "cli_002", nombre: "Diana Toro", documento: "52999887" }
+    ];
+
+    const db = {
+      products,
+      customers,
+      sales: [],
+      invoices: []
+    };
+
+    // ==================== STATE ====================
+    const appState = {
+      currentRoute: "pos",
+      searchTerm: "",
+      cart: [],
+      totalVentas: 0
+    };
+
+    // ==================== RENDERIZADO ====================
+    function renderPOS(st, search = "") {
+      const criteria = search.toLowerCase();
+      const filtered = st.products.filter(p => !criteria || p.nombre.toLowerCase().includes(criteria));
+      
+      const cards = filtered.map(p => {
+        const stock = p.stockActual > 20 ? "bg-emerald-100 text-emerald-700" : p.stockActual > 10 ? "bg-amber-100 text-amber-700" : p.stockActual > 5 ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700";
+        return `
+          <div class="product-card" onclick="addToCart('${p.id}', '${p.nombre}', ${p.precioVentaDetal})">
+            <img src="${p.imagen}" alt="${p.nombre}" class="w-full h-32 object-cover rounded-lg mb-2" />
+            <h4 class="font-semibold text-sm">${p.nombre}</h4>
+            <p class="text-xs text-slate-500">${p.marca}</p>
+            <p class="text-lg font-bold text-slate-900 mt-1">${formatCurrency(p.precioVentaDetal)}</p>
+            <span class="stock-badge ${stock} text-xs inline-block mt-1">Stock: ${p.stockActual}</span>
+          </div>
+        `;
+      }).join("");
+
+      const cartTotal = st.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
+      const cartIva = cartTotal * 0.19;
+      const cartFinal = cartTotal + cartIva;
+
+      return `
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
+          <div class="xl:col-span-2">
+            <div class="view-card mb-4">
+              <h3 class="text-lg font-bold mb-3">Catalogo de productos</h3>
+              <div class="grid grid-cols-2 md:grid-cols-3 gap-3">${cards}</div>
+            </div>
+          </div>
+
+          <div>
+            <div class="view-card sticky top-4">
+              <h3 class="text-lg font-bold mb-3">🛒 Carrito</h3>
+              <div class="bg-slate-50 rounded-lg p-3 mb-3 max-h-64 overflow-y-auto space-y-2">
+                ${st.cart.length > 0 ? st.cart.map((item, idx) => `
+                  <div class="bg-white p-2 rounded-lg border flex justify-between items-start text-sm">
+                    <div>
+                      <p class="font-semibold">${item.nombre}</p>
+                      <p class="text-xs text-slate-500">${item.cantidad}x ${formatCurrency(item.precio)}</p>
+                    </div>
+                    <div class="text-right">
+                      <p class="font-bold">${formatCurrency(item.cantidad * item.precio)}</p>
+                      <button onclick="removeFromCart(${idx})" class="text-xs text-red-600 hover:text-red-700 font-semibold">Eliminar</button>
+                    </div>
+                  </div>
+                `).join("") : '<p class="text-sm text-slate-400 text-center py-4">Carrito vacio</p>'}
+              </div>
+
+              <div class="bg-blue-50 p-3 rounded-lg space-y-1 mb-3 text-sm">
+                <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(cartTotal)}</span></div>
+                <div class="flex justify-between"><span>IVA 19%:</span><span class="font-semibold">${formatCurrency(cartIva)}</span></div>
+                <div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">Total:</span><span class="font-bold text-lg text-slate-900">${formatCurrency(cartFinal)}</span></div>
+              </div>
+
+              <button onclick="procesarVenta()" class="w-full rounded-lg bg-slate-900 text-white px-4 py-3 font-semibold" ${st.cart.length === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>Procesar venta</button>
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderHistorial(st) {
+      const rows = st.sales.map(s => {
+        const customer = s.clienteId ? st.customers.find(c => c.id === s.clienteId) : null;
+        return `<tr class="border-b text-sm"><td class="px-3 py-2">${s.id}</td><td class="px-3 py-2">${formatDate(s.fecha)}</td><td class="px-3 py-2">${customer?.nombre || "Contado"}</td><td class="px-3 py-2">${s.items.length}</td><td class="px-3 py-2 font-semibold">${formatCurrency(s.total)}</td><td class="px-3 py-2 text-center"><button onclick="verFactura('${s.id}')" class="text-slate-600 hover:text-slate-900">🧾</button></td></tr>`;
+      }).join("");
+
+      return `
+        <div class="view-card">
+          <h3 class="text-lg font-bold mb-4">Historial de ventas</h3>
+          <div class="overflow-x-auto rounded-xl border bg-white">
+            <table class="min-w-full">
+              <thead class="bg-slate-50 text-xs uppercase border-b">
+                <tr><th class="px-3 py-2 text-left">Ticket</th><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2">Items</th><th class="px-3 py-2">Total</th><th class="px-3 py-2">Factura</th></tr>
+              </thead>
+              <tbody>${rows || '<tr><td colspan="6" class="px-3 py-4 text-center text-slate-500">Sin ventas registradas</td></tr>'}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderReportes(st) {
+      const totalVentas = st.sales.reduce((s, sale) => s + sale.total, 0);
+      const cantVentas = st.sales.length;
+      const promedioVenta = cantVentas > 0 ? totalVentas / cantVentas : 0;
+      const productosMasVendidos = {};
+      st.sales.forEach(sale => {
+        sale.items.forEach(item => {
+          productosMasVendidos[item.productId] = (productosMasVendidos[item.productId] || 0) + item.cantidad;
+        });
+      });
+
+      return `
+        <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido</p><p class="mt-2 text-2xl font-bold">${formatCurrency(totalVentas)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Cantidad ventas</p><p class="mt-2 text-2xl font-bold">${cantVentas}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Venta promedio</p><p class="mt-2 text-2xl font-bold">${formatCurrency(promedioVenta)}</p></div>
+        </div>
+      `;
+    }
+
+    // ==================== FUNCIONES PRINCIPALES ====================
+    const routes = [
+      { id: "pos", label: "POS", icon: "🛒", title: "Punto de Venta", render: renderPOS },
+      { id: "historial", label: "Historial", icon: "📋", title: "Historial de ventas", render: renderHistorial },
+      { id: "reportes", label: "Reportes", icon: "📊", title: "Reportes", render: renderReportes }
+    ];
+
+    function renderView() {
+      const route = routes.find(r => r.id === appState.currentRoute) || routes[0];
+      document.getElementById("viewTitle").textContent = route.title;
+      document.getElementById("appView").innerHTML = route.render(db, appState.searchTerm);
+      renderSidebar();
+    }
+
+    function renderSidebar() {
+      const nav = document.getElementById("sidebarNav");
+      nav.innerHTML = routes.map(r => {
+        const active = r.id === appState.currentRoute ? "active" : "";
+        return `<button onclick="cambiarRuta('${r.id}')" class="nav-link ${active}"><span>${r.icon}</span><span>${r.label}</span></button>`;
+      }).join("");
+
+      const cartBadge = document.querySelector(".cart-badge");
+      if (cartBadge) cartBadge.textContent = appState.cart.length;
+    }
+
+    function cambiarRuta(rutaId) {
+      appState.currentRoute = rutaId;
+      renderView();
+    }
+
+    function addToCart(productId, nombre, precio) {
+      const existing = appState.cart.find(c => c.productId === productId);
+      if (existing) {
+        existing.cantidad += 1;
+      } else {
+        appState.cart.push({ productId, nombre, precio, cantidad: 1 });
+      }
+      showToast(`${nombre} agregado al carrito`, "success");
+      renderView();
+    }
+
+    function removeFromCart(index) {
+      appState.cart.splice(index, 1);
+      renderView();
+    }
+
+    function procesarVenta() {
+      if (appState.cart.length === 0) return;
+
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `
+        <h3 class="text-lg font-bold mb-4">Procesar venta</h3>
+        <div class="space-y-3 mb-4">
+          <div>
+            <label class="block text-sm font-semibold mb-1">Cliente (opcional)</label>
+            <select id="clienteSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="">-- Venta al contado --</option>
+              ${db.customers.map(c => `<option value="${c.id}">${c.nombre}</option>`).join("")}
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-semibold mb-1">Método de pago</label>
+            <select id="metodoSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="Efectivo">Efectivo</option>
+              <option value="Tarjeta">Tarjeta crédito</option>
+              <option value="Transferencia">Transferencia</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="bg-slate-50 p-3 rounded-lg mb-4 text-sm space-y-1">
+          <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0))}</span></div>
+          <div class="flex justify-between"><span>IVA 19%:</span><span class="font-semibold">${formatCurrency(appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0) * 0.19)}</span></div>
+          <div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">TOTAL:</span><span class="font-bold">${formatCurrency(appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0) * 1.19)}</span></div>
+        </div>
+
+        <div class="flex gap-2">
+          <button onclick="cerrarModal()" class="flex-1 px-3 py-2 border rounded-lg font-semibold">Cancelar</button>
+          <button onclick="confirmarVenta()" class="flex-1 px-3 py-2 bg-slate-900 text-white rounded-lg font-semibold">Confirmar</button>
+        </div>
+      `;
+
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("modalBackdrop").classList.add("active");
+    }
+
+    function confirmarVenta() {
+      const clienteId = document.getElementById("clienteSelect").value || null;
+      const metodo = document.getElementById("metodoSelect").value;
+      
+      const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
+      const iva = subtotal * 0.19;
+      const total = subtotal + iva;
+
+      const sale = {
+        id: uid("sale"),
+        fecha: today,
+        clienteId,
+        items: appState.cart.map(c => ({ productId: c.productId, cantidad: c.cantidad, precio: c.precio })),
+        subtotal,
+        iva,
+        total,
+        metodoPago: metodo
+      };
+
+      db.sales.push(sale);
+      appState.cart = [];
+
+      // Reducir stock
+      sale.items.forEach(item => {
+        const product = db.products.find(p => p.id === item.productId);
+        if (product && product.stockActual > 0) {
+          product.stockActual -= item.cantidad;
+        }
+      });
+
+      showToast("Venta procesada exitosamente", "success");
+      cerrarModal();
+      
+      setTimeout(() => {
+        verFactura(sale.id);
+      }, 300);
+    }
+
+    function verFactura(saleId) {
+      const sale = db.sales.find(s => s.id === saleId);
+      if (!sale) return;
+
+      const customer = sale.clienteId ? db.customers.find(c => c.id === sale.clienteId) : null;
+      const itemsHtml = sale.items.map(item => {
+        const product = db.products.find(p => p.id === item.productId);
+        return `<tr class="border-b text-sm"><td class="px-2 py-1">${product?.nombre || "Producto"}</td><td class="px-2 py-1 text-right">${item.cantidad}</td><td class="px-2 py-1 text-right">${formatCurrency(item.precio)}</td><td class="px-2 py-1 text-right">${formatCurrency(item.cantidad * item.precio)}</td></tr>`;
+      }).join("");
+
+      const div = document.createElement("div");
+      div.className = "modal-content max-w-lg";
+      div.innerHTML = `
+        <div class="bg-white border-4 border-slate-900 p-6 rounded-lg">
+          <div class="text-center mb-4 pb-3 border-b-2 border-dashed">
+            <h2 class="text-2xl font-bold">FACTURA ELECTRONICA</h2>
+            <p class="text-sm text-slate-600">Mujer Magica - Belleza</p>
+            <p class="text-xs text-slate-500">NIT: 900.123.456-7</p>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+            <div>
+              <p class="font-semibold">FACTURA: ${sale.id}</p>
+              <p class="font-semibold mt-2">FECHA: ${formatDate(sale.fecha)}</p>
+            </div>
+            <div class="text-right">
+              <p class="font-semibold">CLIENTE: ${customer?.nombre || "CONSUMIDOR"}</p>
+              <p class="font-semibold mt-2">PAGO: ${sale.metodoPago}</p>
+            </div>
+          </div>
+
+          <table class="w-full mb-3 text-sm">
+            <thead class="bg-slate-900 text-white">
+              <tr><th class="px-2 py-1 text-left">Descripcion</th><th class="px-2 py-1 text-right">Qty</th><th class="px-2 py-1 text-right">P.Unit</th><th class="px-2 py-1 text-right">Subtotal</th></tr>
+            </thead>
+            <tbody>${itemsHtml}</tbody>
+          </table>
+
+          <div class="bg-slate-50 p-3 rounded-lg mb-3 text-sm space-y-1 border-2 border-slate-900">
+            <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(sale.subtotal)}</span></div>
+            <div class="flex justify-between"><span>IVA (19%):</span><span class="font-semibold">${formatCurrency(sale.iva)}</span></div>
+            <div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">TOTAL:</span><span class="font-bold text-lg">${formatCurrency(sale.total)}</span></div>
+          </div>
+
+          <div class="text-center mb-3 text-xs text-slate-600">
+            <p class="font-semibold mb-1">CODIGO QR:</p>
+            <p class="font-mono text-xs bg-blue-50 p-2 rounded">█▀█▀█▀█</p>
+          </div>
+
+          <div class="flex gap-2">
+            <button onclick="imprimirFactura()" class="flex-1 px-3 py-2 border rounded-lg font-semibold">Imprimir</button>
+            <button onclick="cerrarModal()" class="flex-1 px-3 py-2 bg-slate-900 text-white rounded-lg font-semibold">Cerrar</button>
+          </div>
+        </div>
+      `;
+
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("modalBackdrop").classList.add("active");
+    }
+
+    function imprimirFactura() {
+      window.print();
+    }
+
+    function cerrarModal() {
+      document.getElementById("modalBackdrop").classList.remove("active");
+      renderView();
+    }
+
+    function startClock() {
+      const update = () => {
+        document.getElementById("liveClock").textContent = new Intl.DateTimeFormat("es-CO", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date());
+      };
+      update();
+      setInterval(update, 1000);
+    }
+
+    // ==================== EVENTOS ====================
+    document.getElementById("globalSearch").addEventListener("input", e => {
+      appState.searchTerm = e.target.value;
+      renderView();
+    });
+
+    document.getElementById("cartBtn").addEventListener("click", () => {
+      appState.currentRoute = "pos";
+      renderView();
+      showToast("Carrito abierto", "info");
+    });
+
+    // ==================== INICIO ====================
+    renderView();
+    startClock();
+  </script>
+</body>
+</html>
