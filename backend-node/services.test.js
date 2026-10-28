@@ -311,6 +311,15 @@ test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async (
   assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO services ")).values[3], null);
 });
 
+test("esquema de cartera evita foreign keys incompatibles con tablas antiguas", () => {
+  const schema = fs.readFileSync(path.join(__dirname, "sql/schema.sql"), "utf8");
+  const creditsTable = /CREATE TABLE IF NOT EXISTS customer_credits \(([\s\S]*?)\) ENGINE=InnoDB/.exec(schema)?.[1] || "";
+  assert.ok(creditsTable.includes("sale_id VARCHAR(50) NOT NULL UNIQUE"));
+  assert.ok(creditsTable.includes("customer_id VARCHAR(50) NOT NULL"));
+  assert.doesNotMatch(creditsTable, /FOREIGN KEY/i);
+  assert.match(schema, /FOREIGN KEY \(credit_id\) REFERENCES customer_credits\(id\) ON DELETE CASCADE/);
+});
+
 test("lectura conserva el nombre historico aunque cambie el catalogo", async () => {
   const tables = {
     services: [{ id: "service_1", nombre: "Nuevo nombre", precioSugerido: "200000.00", costoSugerido: null, activo: 0 }],

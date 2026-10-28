@@ -49,9 +49,7 @@ CREATE TABLE IF NOT EXISTS customer_credits (
   customer_id VARCHAR(50) NOT NULL,
   monto DECIMAL(12,2) NOT NULL,
   fecha DATETIME NOT NULL,
-  INDEX idx_customer_credits_customer_fecha (customer_id, fecha),
-  FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
-  FOREIGN KEY (customer_id) REFERENCES customers(id)
+  INDEX idx_customer_credits_customer_fecha (customer_id, fecha)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS customer_payments (
