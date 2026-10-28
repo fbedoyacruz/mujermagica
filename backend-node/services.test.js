@@ -93,6 +93,29 @@ test("POS usa tarifas por modalidad y separa el mismo producto por precio", () =
   assert.equal(vm.runInContext("appState.cart.length", app), 2);
 });
 
+test("historial conserva todas las ventas y permite filtrar por fecha con total diario", () => {
+  const state = fixture();
+  state.sales = Array.from({ length: 22 }, (_, index) => ({
+    id: `sale_${index + 1}`,
+    fecha: index < 2 ? "2026-10-27T12:00:00Z" : "2026-10-28T12:00:00Z",
+    clienteId: null,
+    total: 1000,
+    items: []
+  }));
+  const app = frontend(state);
+
+  const allHistory = vm.runInContext("renderVentas(fixture)", app);
+  assert.equal((allHistory.match(/<tr class=\"border-b text-sm\">/g) || []).length, 22);
+
+  vm.runInContext('appState.historyMode = "date"; appState.historyDate = "2026-10-27";', app);
+  const dailyHistory = vm.runInContext("renderVentas(fixture)", app);
+  assert.match(dailyHistory, /sale_1/);
+  assert.match(dailyHistory, /sale_2/);
+  assert.doesNotMatch(dailyHistory, /sale_3/);
+  assert.match(dailyHistory, /Ventas del día/);
+  assert.match(dailyHistory, /\$\s?2\.000/);
+});
+
 test("cobro de servicios no altera existencias y un fallo conserva el carrito", async () => {
   const state = fixture();
   const app = frontend(state);
