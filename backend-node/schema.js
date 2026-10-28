@@ -21,6 +21,16 @@ async function ensureSchema() {
     if (columns.length === 0) {
       await conn.query("ALTER TABLE products ADD COLUMN precio_venta_mayorista DECIMAL(12,2) DEFAULT NULL");
     }
+
+    const [productActiveColumn] = await conn.query("SHOW COLUMNS FROM products LIKE 'activo'");
+    if (productActiveColumn.length === 0) {
+      await conn.query("ALTER TABLE products ADD COLUMN activo BOOLEAN NOT NULL DEFAULT TRUE");
+    }
+
+    const [stockDeductedColumn] = await conn.query("SHOW COLUMNS FROM sale_items LIKE 'stock_descontado'");
+    if (stockDeductedColumn.length === 0) {
+      await conn.query("ALTER TABLE sale_items ADD COLUMN stock_descontado BOOLEAN NOT NULL DEFAULT TRUE");
+    }
   } finally {
     conn.release();
   }

@@ -98,6 +98,17 @@
     // ==================== UTILIDADES ====================
     const formatCurrency = (v) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v || 0);
     const formatDate = (d) => { const date = new Date(d); return Number.isNaN(date.getTime()) ? "--" : new Intl.DateTimeFormat("es-CO", { year: "numeric", month: "short", day: "2-digit" }).format(date); };
+    const paymentMethods = [
+      { value: "Efectivo", label: "Efectivo" },
+      { value: "Tarjeta", label: "Tarjeta crédito" },
+      { value: "Tarjeta débito", label: "Tarjeta débito" },
+      { value: "Transferencia", label: "Transferencia bancaria" },
+      { value: "Nequi", label: "Nequi" },
+      { value: "Daviplata", label: "Daviplata" },
+      { value: "QR", label: "Pago por QR" },
+      { value: "Otro", label: "Otro" },
+      { value: "Credito", label: "Crédito" }
+    ];
     const getLocalDateInputValue = (value) => {
       const date = value instanceof Date ? value : new Date(value);
       if (Number.isNaN(date.getTime())) return "";
@@ -139,7 +150,10 @@
       try {
         const res = await fetch(`${API_BASE}/state`);
         if (!res.ok) throw new Error("Respuesta no válida del servidor");
-        return await res.json();
+        const state = await res.json();
+        state.customerCredits = Array.isArray(state.customerCredits) ? state.customerCredits : [];
+        state.customerPayments = Array.isArray(state.customerPayments) ? state.customerPayments : [];
+        return state;
       } catch (e) {
         console.error("Error cargando BD desde MySQL:", e);
         return null;
@@ -257,6 +271,8 @@
       customers: JSON.parse(JSON.stringify(defaultCustomers)),
       services: JSON.parse(JSON.stringify(defaultServices)),
       sales: generateDefaultSales(),
+      customerCredits: [],
+      customerPayments: [],
       purchases: [],
       movements: [],
       alerts: []
@@ -276,6 +292,7 @@
       posCategoryFilter: "",
       historyMode: "all",
       historyDate: getLocalDateInputValue(new Date()),
+      carteraCustomerId: "",
       periodo: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`,
       activeAlerts: 0
     };
@@ -433,9 +450,10 @@
       const filtered = st.products.filter(p => !criteria || p.nombre.toLowerCase().includes(criteria));
       const rows = filtered.map(p => {
         const estado = getEstadoStock(p);
-        return `<tr class="border-b text-sm hover:bg-slate-50"><td class="px-3 py-2 font-semibold">${p.nombre}</td><td class="px-3 py-2">${p.marca}</td><td class="px-3 py-2">${formatCurrency(p.precioVentaDetal)}</td><td class="px-3 py-2">${formatCurrency(p.precioCompra)}</td><td class="px-3 py-2 text-right">${p.stockActual}</td><td class="px-3 py-2"><span class="stock-badge ${estado.color === 'text-emerald-700' ? 'bg-emerald-100 text-emerald-700' : estado.color === 'text-amber-700' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${estado.estado}</span></td><td class="px-3 py-2 text-center"><button type="button" onclick="showEditProductModal('${p.id}')" class="text-slate-700 hover:text-slate-900 text-sm font-semibold">✏️ Editar</button></td></tr>`;
+        const isActive = p.activo !== false;
+        return `<tr class="border-b text-sm hover:bg-slate-50"><td class="break-words px-3 py-2 font-semibold">${escapeHtml(p.nombre)}</td><td class="px-3 py-2">${escapeHtml(p.marca || "-")}</td><td class="px-3 py-2 text-right">${formatCurrency(p.precioVentaDetal)}</td><td class="px-3 py-2 text-right">${formatCurrency(p.precioCompra)}</td><td class="px-3 py-2 text-right">${p.stockActual}</td><td class="px-3 py-2"><div class="flex flex-col items-start gap-1"><span class="stock-badge ${estado.color === 'text-emerald-700' ? 'bg-emerald-100 text-emerald-700' : estado.color === 'text-amber-700' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${estado.estado}</span><span class="text-xs ${isActive ? "text-emerald-700" : "text-slate-500"}">${isActive ? "Activo" : "Inactivo"}</span></div></td><td class="px-3 py-2"><div class="flex items-center justify-center gap-1"><button type="button" aria-label="Editar ${escapeHtml(p.nombre)}" title="Editar producto" onclick="showEditProductModal('${escapeHtml(p.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900">✏️</button><button type="button" aria-label="${isActive ? "Desactivar" : "Activar"} ${escapeHtml(p.nombre)}" title="${isActive ? "Desactivar producto" : "Activar producto"}" onclick="setProductActive('${escapeHtml(p.id)}', ${!isActive})" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm ${isActive ? "text-teal-700 hover:bg-teal-50" : "text-emerald-700 hover:bg-emerald-50"}">⏻</button><button type="button" aria-label="Eliminar ${escapeHtml(p.nombre)}" title="Eliminar producto" onclick="eliminarProducto('${escapeHtml(p.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-red-700 hover:bg-red-50">🗑️</button></div></td></tr>`;
       }).join("");
-      return `<div class="view-card"><div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4"><div><h3 class="text-lg font-bold">📦 Catálogo de productos</h3><p class="text-sm text-slate-500">Alta y edición de productos</p></div><button type="button" onclick="showEditProductModal()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ Nuevo producto</button></div><div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="px-3 py-2 text-left">Producto</th><th class="px-3 py-2 text-left">Marca</th><th class="px-3 py-2 text-right">P. Venta</th><th class="px-3 py-2 text-right">P. Compra</th><th class="px-3 py-2 text-right">Stock</th><th class="px-3 py-2">Estado</th><th class="px-3 py-2 text-center">Acción</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      return `<div class="view-card"><div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4"><div><h3 class="text-lg font-bold">📦 Catálogo de productos</h3><p class="text-sm text-slate-500">Alta y edición de productos</p></div><button type="button" onclick="showEditProductModal()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ Nuevo producto</button></div><div class="overflow-x-auto rounded-xl border bg-white"><table class="w-full min-w-[900px] table-fixed text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="w-[24%] px-3 py-2 text-left">Producto</th><th class="w-[14%] px-3 py-2 text-left">Marca</th><th class="w-[14%] px-3 py-2 text-right">P. Venta</th><th class="w-[14%] px-3 py-2 text-right">P. Compra</th><th class="w-[8%] px-3 py-2 text-right">Stock</th><th class="w-[12%] px-3 py-2 text-left">Estado</th><th class="w-[14%] px-3 py-2 text-center">Acción</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
     }
 
     function renderProveedores(st, search = "") {
@@ -637,7 +655,7 @@
             <td class="px-3 py-2">${c.correo || "---"}</td>
             <td class="px-3 py-2 text-right">${ventas}</td>
             <td class="px-3 py-2 text-right">${formatCurrency(totalComprado)}</td>
-            <td class="px-3 py-2 text-center"><button type="button" onclick="showEditCustomerModal('${c.id}')" class="text-slate-700 hover:text-slate-900 text-sm font-semibold">✏️ Editar</button></td>
+            <td class="px-3 py-2"><div class="flex items-center justify-center gap-1"><button type="button" aria-label="Editar ${escapeHtml(c.nombre)}" title="Editar cliente" onclick="showEditCustomerModal('${escapeHtml(c.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900">✏️</button><button type="button" aria-label="Eliminar ${escapeHtml(c.nombre)}" title="Eliminar cliente" onclick="eliminarCliente('${escapeHtml(c.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-red-700 hover:bg-red-50">🗑️</button></div></td>
           </tr>
         `;
       }).join("");
@@ -663,6 +681,25 @@
           </div>
         </div>
       `;
+    }
+
+    async function eliminarCliente(customerId) {
+      const customerIndex = db.customers.findIndex(customer => customer.id === customerId);
+      if (customerIndex === -1) return;
+      const customer = db.customers[customerIndex];
+      if (db.sales.some(sale => sale.clienteId === customerId)) {
+        showToast("No se puede eliminar: el cliente tiene ventas asociadas. Se conserva para proteger el historial.", "warning");
+        return;
+      }
+      if (!confirm(`¿Eliminar el cliente ${customer.nombre}? Esta acción no se puede deshacer.`)) return;
+
+      db.customers.splice(customerIndex, 1);
+      if (!await saveDB()) {
+        db.customers.splice(customerIndex, 0, customer);
+        return;
+      }
+      showToast("Cliente eliminado", "success");
+      renderView();
     }
 
     function showEditProductModal(productId) {
@@ -710,7 +747,7 @@
             </div>
           </div>
           <div>
-            <label class="block text-sm font-semibold mb-1">Precio al por mayor (opcional)</label>
+              <label class="block text-sm font-semibold mb-1">Precio al por mayor</label>
             <input type="number" id="productPriceWholesale" value="${product?.precioVentaMayorista ?? ""}" min="0.01" step="0.01" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Dejar vacío si no aplica" />
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -820,6 +857,7 @@
             precioCompra: priceBuy,
             precioVentaDetal: priceSell,
             precioVentaMayorista: wholesalePrice,
+            activo: true,
             stockActual: stock,
             stockMinimo,
             fechaIngreso: today
@@ -974,7 +1012,7 @@
       });
       const rows = [...filtered].sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(s => {
         const customer = s.clienteId ? st.customers.find(c => c.id === s.clienteId) : null;
-        return `<tr class="border-b text-sm"><td class="px-3 py-2">${escapeHtml(s.id)}</td><td class="px-3 py-2">${formatDate(s.fecha)}</td><td class="px-3 py-2">${escapeHtml(customer?.nombre || "Contado")}</td><td class="px-3 py-2 text-right">${s.items.length}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(s.total)}</td><td class="px-3 py-2 text-center"><button onclick="verFactura('${escapeHtml(s.id)}')" class="text-slate-600 hover:text-slate-900 text-sm">🧾</button></td></tr>`;
+        return `<tr class="border-b text-sm"><td class="px-3 py-2">${escapeHtml(s.id)}</td><td class="px-3 py-2">${formatDate(s.fecha)}</td><td class="px-3 py-2">${escapeHtml(customer?.nombre || "Contado")}</td><td class="px-3 py-2 text-right">${s.items.length}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(s.total)}</td><td class="px-3 py-2 text-center"><button onclick="verFactura('${escapeHtml(s.id)}')" class="text-slate-600 hover:text-slate-900 text-sm">Ver</button></td><td class="px-3 py-2 text-center"><button type="button" onclick="eliminarVenta('${escapeHtml(s.id)}')" class="text-sm font-semibold text-red-700">Eliminar</button></td></tr>`;
       }).join("");
       const emptyMessage = appState.historyMode === "date" ? "No hay ventas para la fecha seleccionada." : "No hay ventas registradas.";
       const tableRows = rows || `<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500">${emptyMessage}</td></tr>`;
@@ -984,7 +1022,171 @@
       const dateFilter = appState.historyMode === "date"
         ? `<div><label for="historyDate" class="mb-1 block text-sm font-semibold">Fecha</label><input id="historyDate" type="date" value="${appState.historyDate}" onchange="setHistoryDate(this.value)" class="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-56" /></div>`
         : "";
-      return `<div class="view-card"><h3 class="text-lg font-bold mb-4">💳 Historial de ventas</h3><div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><label for="historyMode" class="mb-1 block text-sm font-semibold">Consultar</label><select id="historyMode" onchange="setHistoryMode(this.value)" class="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-56"><option value="all" ${appState.historyMode === "all" ? "selected" : ""}>Todo el historial</option><option value="date" ${appState.historyMode === "date" ? "selected" : ""}>Por fecha</option></select></div>${dateFilter}</div>${dailySummary}<div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="px-3 py-2 text-left">Ticket</th><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2">Items</th><th class="px-3 py-2 text-right">Total</th><th class="px-3 py-2">Ver</th></tr></thead><tbody>${tableRows}</tbody></table></div></div>`;
+      return `<div class="view-card"><h3 class="text-lg font-bold mb-4">💳 Historial de ventas</h3><div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><label for="historyMode" class="mb-1 block text-sm font-semibold">Consultar</label><select id="historyMode" onchange="setHistoryMode(this.value)" class="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-56"><option value="all" ${appState.historyMode === "all" ? "selected" : ""}>Todo el historial</option><option value="date" ${appState.historyMode === "date" ? "selected" : ""}>Por fecha</option></select></div>${dateFilter}</div>${dailySummary}<div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="px-3 py-2 text-left">Ticket</th><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2">Items</th><th class="px-3 py-2 text-right">Total</th><th class="px-3 py-2">Ver</th><th class="px-3 py-2">Acción</th></tr></thead><tbody>${tableRows}</tbody></table></div></div>`;
+    }
+
+    function getCreditPaid(creditId, state = db) {
+      return (state.customerPayments || []).filter(payment => payment.creditId === creditId).reduce((total, payment) => total + Number(payment.monto || 0), 0);
+    }
+
+    function getCreditBalance(credit, state = db) {
+      return Math.max(0, Number((Number(credit.monto) - getCreditPaid(credit.id, state)).toFixed(2)));
+    }
+
+    function setCarteraCustomer(customerId) {
+      appState.carteraCustomerId = customerId || "";
+      renderView();
+    }
+
+    function renderCartera(st, search = "") {
+      const criteria = search.trim().toLowerCase();
+      const selectedCustomerId = appState.carteraCustomerId;
+      const credits = (st.customerCredits || []).map(credit => {
+        const customer = st.customers.find(entry => entry.id === credit.customerId);
+        const sale = st.sales.find(entry => entry.id === credit.saleId);
+        return { ...credit, customer, sale, abonado: getCreditPaid(credit.id, st), saldo: getCreditBalance(credit, st) };
+      }).filter(credit => {
+        if (!credit.customer || (selectedCustomerId && credit.customerId !== selectedCustomerId)) return false;
+        const searchable = `${credit.customer.nombre} ${credit.customer.documento || ""} ${credit.saleId}`.toLowerCase();
+        return !criteria || searchable.includes(criteria);
+      }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
+
+      const totalCartera = (st.customerCredits || []).reduce((total, credit) => total + getCreditBalance(credit, st), 0);
+      const customerIdsWithBalance = new Set((st.customerCredits || []).filter(credit => getCreditBalance(credit, st) > 0).map(credit => credit.customerId));
+      const totalAbonos = (st.customerPayments || []).reduce((total, payment) => total + Number(payment.monto || 0), 0);
+      const customerOptions = [
+        `<option value="" ${!selectedCustomerId ? "selected" : ""}>Todos los clientes</option>`,
+        ...st.customers.map(customer => `<option value="${escapeHtml(customer.id)}" ${customer.id === selectedCustomerId ? "selected" : ""}>${escapeHtml(customer.nombre)} · ${escapeHtml(customer.documento || "Sin documento")}</option>`)
+      ].join("");
+
+      const creditRows = credits.map(credit => `<tr class="border-b text-sm"><td class="px-3 py-2">${formatDate(credit.fecha)}</td><td class="px-3 py-2 font-semibold">${escapeHtml(credit.customer.nombre)}</td><td class="px-3 py-2"><button type="button" onclick="verFactura('${escapeHtml(credit.saleId)}')" class="font-semibold text-teal-700">${escapeHtml(credit.saleId)}</button></td><td class="px-3 py-2 text-right">${formatCurrency(credit.monto)}</td><td class="px-3 py-2 text-right">${formatCurrency(credit.abonado)}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(credit.saldo)}</td><td class="px-3 py-2 text-center">${credit.saldo > 0 ? `<button type="button" onclick="showCreditPaymentModal('${escapeHtml(credit.id)}')" class="rounded-md bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white">Registrar abono</button>` : '<span class="text-xs font-semibold text-emerald-700">Pagado</span>'}</td></tr>`).join("");
+      const visibleCreditIds = new Set(credits.map(credit => credit.id));
+      const paymentRows = (st.customerPayments || []).filter(payment => visibleCreditIds.has(payment.creditId)).sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(payment => {
+        const credit = credits.find(entry => entry.id === payment.creditId);
+        return `<tr class="border-b text-sm"><td class="px-3 py-2">${formatDate(payment.fecha)}</td><td class="px-3 py-2 font-semibold">${escapeHtml(credit?.customer.nombre || "Cliente")}</td><td class="px-3 py-2">${escapeHtml(credit?.saleId || "-")}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(payment.monto)}</td><td class="px-3 py-2">${escapeHtml(payment.metodoPago || "-")}</td><td class="px-3 py-2">${escapeHtml(payment.observaciones || "-")}</td></tr>`;
+      }).join("");
+
+      return `<div class="space-y-4"><div class="view-card"><div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 class="text-lg font-bold">Cartera de clientes</h2><p class="text-sm text-slate-500">Créditos pendientes y abonos registrados</p></div><div><label for="carteraCustomer" class="mb-1 block text-sm font-semibold">Cliente</label><select id="carteraCustomer" onchange="setCarteraCustomer(this.value)" class="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-72">${customerOptions}</select></div></div></div><div class="grid grid-cols-1 gap-3 sm:grid-cols-3"><div class="kpi-card"><p class="text-xs uppercase text-slate-500">Saldo de cartera</p><p class="mt-2 text-xl font-bold">${formatCurrency(totalCartera)}</p></div><div class="kpi-card"><p class="text-xs uppercase text-slate-500">Clientes con saldo</p><p class="mt-2 text-xl font-bold">${customerIdsWithBalance.size}</p></div><div class="kpi-card"><p class="text-xs uppercase text-slate-500">Abonos registrados</p><p class="mt-2 text-xl font-bold">${formatCurrency(totalAbonos)}</p></div></div><section class="view-card"><h3 class="mb-3 text-base font-bold">Créditos por factura</h3><div class="overflow-x-auto rounded-lg border"><table class="min-w-full"><thead class="border-b bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-left">Factura</th><th class="px-3 py-2 text-right">Crédito</th><th class="px-3 py-2 text-right">Abonado</th><th class="px-3 py-2 text-right">Saldo</th><th class="px-3 py-2 text-center">Acción</th></tr></thead><tbody>${creditRows || '<tr><td colspan="7" class="px-3 py-6 text-center text-sm text-slate-500">No hay créditos para mostrar</td></tr>'}</tbody></table></div></section><section class="view-card"><h3 class="mb-3 text-base font-bold">Historial de abonos</h3><div class="overflow-x-auto rounded-lg border"><table class="min-w-full"><thead class="border-b bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-left">Factura</th><th class="px-3 py-2 text-right">Abono</th><th class="px-3 py-2 text-left">Método</th><th class="px-3 py-2 text-left">Observaciones</th></tr></thead><tbody>${paymentRows || '<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500">Aún no hay abonos registrados</td></tr>'}</tbody></table></div></section></div>`;
+    }
+
+    async function registrarAbono(creditId, monto, metodoPago, observaciones = "") {
+      const credit = (db.customerCredits || []).find(entry => entry.id === creditId);
+      if (!credit) return false;
+      const amount = Number(monto);
+      const saldo = getCreditBalance(credit);
+      if (!Number.isFinite(amount) || amount <= 0 || amount > saldo) {
+        showToast("Ingresa un abono mayor que cero y no superior al saldo", "warning");
+        return false;
+      }
+      if (!metodoPago || metodoPago === "Credito") {
+        showToast("Selecciona un método de pago para el abono", "warning");
+        return false;
+      }
+
+      const payment = { id: uid("pay"), creditId, monto: amount, fecha: new Date().toISOString(), metodoPago, observaciones: observaciones.trim() };
+      db.customerPayments.push(payment);
+      if (!await saveDB()) {
+        db.customerPayments.pop();
+        return false;
+      }
+      showToast("Abono registrado", "success");
+      return true;
+    }
+
+    function showCreditPaymentModal(creditId) {
+      const credit = (db.customerCredits || []).find(entry => entry.id === creditId);
+      if (!credit) return;
+      const saldo = getCreditBalance(credit);
+      if (saldo <= 0) return showToast("Esta factura ya está pagada", "info");
+      const customer = db.customers.find(entry => entry.id === credit.customerId);
+      const methods = paymentMethods.filter(method => method.value !== "Credito").map(method => `<option value="${escapeHtml(method.value)}">${escapeHtml(method.label)}</option>`).join("");
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `<div class="modal-header"><h3 class="text-lg font-bold">Registrar abono</h3></div><div class="modal-body"><p class="mb-4 text-sm text-slate-600">${escapeHtml(customer?.nombre || "Cliente")} · Factura ${escapeHtml(credit.saleId)} · Saldo ${formatCurrency(saldo)}</p><form id="creditPaymentForm" class="space-y-3"><div><label for="creditPaymentAmount" class="mb-1 block text-sm font-semibold">Valor del abono</label><input id="creditPaymentAmount" type="number" min="1" max="${saldo}" step="1" required class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div><label for="creditPaymentMethod" class="mb-1 block text-sm font-semibold">Método de pago</label><select id="creditPaymentMethod" required class="w-full rounded-lg border bg-white px-3 py-2 text-sm">${methods}</select></div><div><label for="creditPaymentNotes" class="mb-1 block text-sm font-semibold">Observaciones</label><input id="creditPaymentNotes" type="text" maxlength="500" class="w-full rounded-lg border px-3 py-2 text-sm" /></div></form></div><div class="modal-footer"><button type="button" onclick="cerrarModal()" class="flex-1 rounded-lg border px-3 py-2 text-sm font-semibold">Cancelar</button><button type="submit" form="creditPaymentForm" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white">Guardar abono</button></div>`;
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("modalBackdrop").classList.add("active");
+      document.getElementById("creditPaymentForm").addEventListener("submit", async event => {
+        event.preventDefault();
+        const saved = await registrarAbono(creditId, document.getElementById("creditPaymentAmount").value, document.getElementById("creditPaymentMethod").value, document.getElementById("creditPaymentNotes").value);
+        if (saved) {
+          cerrarModal();
+          renderView();
+        }
+      });
+    }
+
+    function productoTieneHistorial(productId) {
+      return db.sales.some(sale => (sale.items || []).some(item => item.productId === productId))
+        || db.purchases.some(purchase => (purchase.items || []).some(item => item.productId === productId))
+        || db.movements.some(movement => movement.productoId === productId);
+    }
+
+    async function setProductActive(productId, active) {
+      const product = db.products.find(entry => entry.id === productId);
+      if (!product || product.activo === active) return;
+      const previousState = product.activo;
+      product.activo = active;
+      if (!await saveDB()) {
+        product.activo = previousState;
+        return;
+      }
+      showToast(active ? "Producto activado" : "Producto desactivado", "success");
+      renderView();
+    }
+
+    async function eliminarProducto(productId) {
+      const productIndex = db.products.findIndex(entry => entry.id === productId);
+      if (productIndex === -1) return;
+      const product = db.products[productIndex];
+      if (productoTieneHistorial(productId)) {
+        showToast("Este producto tiene historial. Desactívalo para conservar sus ventas y compras.", "warning");
+        return;
+      }
+      if (!confirm(`¿Eliminar el producto ${product.nombre}? Esta acción no se puede deshacer.`)) return;
+
+      db.products.splice(productIndex, 1);
+      if (!await saveDB()) {
+        db.products.splice(productIndex, 0, product);
+        return;
+      }
+      showToast("Producto eliminado", "success");
+      renderView();
+    }
+
+    async function eliminarVenta(saleId) {
+      if (appState.savingSale) return;
+      const saleIndex = db.sales.findIndex(entry => entry.id === saleId);
+      if (saleIndex === -1) return;
+      const sale = db.sales[saleIndex];
+      const saleCreditIds = (db.customerCredits || []).filter(credit => credit.saleId === saleId).map(credit => credit.id);
+      if ((db.customerPayments || []).some(payment => saleCreditIds.includes(payment.creditId))) {
+        showToast("No se puede eliminar: esta venta a crédito ya tiene abonos registrados.", "warning");
+        return;
+      }
+      if (!confirm(`¿Eliminar la venta ${sale.id} por ${formatCurrency(sale.total)}? Se devolverá al inventario el stock que esta venta descontó.`)) return;
+
+      const stockBefore = new Map(db.products.map(product => [product.id, product.stockActual]));
+      const invoicesBefore = Array.isArray(db.invoices) ? db.invoices : null;
+      const creditsBefore = db.customerCredits || [];
+      db.sales.splice(saleIndex, 1);
+      db.customerCredits = creditsBefore.filter(credit => credit.saleId !== saleId);
+      for (const item of sale.items || []) {
+        if (item.tipo === "servicio" || item.stockDescontado === false) continue;
+        const product = db.products.find(entry => entry.id === item.productId);
+        if (product) product.stockActual += item.cantidad;
+      }
+      if (invoicesBefore) db.invoices = invoicesBefore.filter(invoice => invoice.saleId !== saleId);
+
+      if (!await saveDB()) {
+        db.sales.splice(saleIndex, 0, sale);
+        db.customerCredits = creditsBefore;
+        db.products.forEach(product => { product.stockActual = stockBefore.get(product.id); });
+        if (invoicesBefore) db.invoices = invoicesBefore;
+        return;
+      }
+      showToast("Venta eliminada y stock restaurado", "success");
+      renderView();
     }
 
     function renderPOS(st, search = "") {
@@ -1004,7 +1206,7 @@
         const matchesSearch = !criteria || p.nombre.toLowerCase().includes(criteria);
         const matchesBrand = !selectedBrand || (p.marca || "").trim() === selectedBrand;
         const matchesCategory = !selectedCategory || (p.categoria || "").trim() === selectedCategory;
-        return matchesSearch && matchesBrand && matchesCategory;
+        return p.activo !== false && matchesSearch && matchesBrand && matchesCategory;
       });
       const priceMode = appState.posTab === "mayorista" ? "mayorista" : "detal";
       const isWholesale = priceMode === "mayorista";
@@ -1173,7 +1375,8 @@
       { categoria: "OPERACIONES", routes: [
         { id: "pos", label: "Punto de Venta", icon: "🛒", title: "POS - Venta", render: renderPOS },
         { id: "dashboard", label: "Dashboard", icon: "📊", title: "Dashboard Principal", render: renderDashboard },
-        { id: "ventas", label: "Historial", icon: "💳", title: "Historial de ventas", render: renderVentas }
+        { id: "ventas", label: "Historial", icon: "💳", title: "Historial de ventas", render: renderVentas },
+        { id: "cartera", label: "Cartera", icon: "💰", title: "Cartera de clientes", render: renderCartera }
       ]},
       { categoria: "INVENTARIO", routes: [
         { id: "productos", label: "Productos", icon: "📦", title: "Catálogo de productos", render: renderProductos },
@@ -1327,7 +1530,7 @@
         <div class="modal-body">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
-              <label class="block text-sm font-semibold mb-1">Cliente (opcional)</label>
+              <label class="block text-sm font-semibold mb-1">Cliente</label>
               <select id="clienteSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
                 <option value="">-- Venta al contado --</option>
                 ${db.customers.map(c => `<option value="${c.id}">${c.nombre}</option>`).join("")}
@@ -1336,9 +1539,7 @@
             <div>
               <label class="block text-sm font-semibold mb-1">Método de pago</label>
               <select id="metodoSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
-                <option value="Efectivo">Efectivo</option>
-                <option value="Tarjeta">Tarjeta crédito</option>
-                <option value="Transferencia">Transferencia</option>
+                ${paymentMethods.map(method => `<option value="${escapeHtml(method.value)}">${escapeHtml(method.label)}</option>`).join("")}
               </select>
             </div>
           </div>
@@ -1368,6 +1569,10 @@
       if (!appState.cart.length || appState.savingSale) return;
       const clienteId = document.getElementById("clienteSelect").value || null;
       const metodo = document.getElementById("metodoSelect").value;
+      if (metodo === "Credito" && !clienteId) {
+        showToast("Debe seleccionar un cliente para ventas a crédito.", "warning");
+        return;
+      }
 
       const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
       const iva = 0;
@@ -1377,7 +1582,11 @@
         id: uid("sale"),
         fecha: new Date().toISOString(),
         clienteId,
-        items: appState.cart.map(c => c.tipo === "servicio" ? { ...c } : { productId: c.productId, cantidad: c.cantidad, precio: c.precio }),
+        items: appState.cart.map(c => {
+          if (c.tipo === "servicio") return { ...c };
+          const product = db.products.find(entry => entry.id === c.productId);
+          return { productId: c.productId, cantidad: c.cantidad, precio: c.precio, stockDescontado: Boolean(product && product.stockActual > 0) };
+        }),
         subtotal,
         iva,
         total,
@@ -1385,19 +1594,28 @@
       };
 
       const stockBefore = new Map(db.products.map(product => [product.id, product.stockActual]));
+      const customerCredit = metodo === "Credito" ? {
+        id: uid("credit"),
+        saleId: sale.id,
+        customerId: clienteId,
+        monto: total,
+        fecha: sale.fecha
+      } : null;
       sale.items.forEach(item => {
         if (item.tipo === "servicio") return;
         const product = db.products.find(p => p.id === item.productId);
-        if (product && product.stockActual > 0) {
+        if (product && item.stockDescontado) {
           product.stockActual -= item.cantidad;
         }
       });
       db.sales.push(sale);
+      if (customerCredit) db.customerCredits.push(customerCredit);
       appState.savingSale = true;
       const saved = await saveDB();
       appState.savingSale = false;
       if (!saved) {
         db.sales = db.sales.filter(entry => entry.id !== sale.id);
+        if (customerCredit) db.customerCredits = db.customerCredits.filter(credit => credit.id !== customerCredit.id);
         db.products.forEach(product => { product.stockActual = stockBefore.get(product.id); });
         return;
       }

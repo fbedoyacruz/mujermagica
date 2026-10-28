@@ -5,13 +5,19 @@ async function getState() {
   const [providers] = await pool.query("SELECT id, nombre, contacto, telefono, email FROM providers");
   const [customers] = await pool.query("SELECT id, nombre, documento, telefono, correo FROM customers");
   const [products] = await pool.query(
-    "SELECT id, nombre, categoria, marca, precio_venta_detal AS precioVentaDetal, precio_venta_mayorista AS precioVentaMayorista, precio_compra AS precioCompra, stock_actual AS stockActual, stock_minimo AS stockMinimo, proveedor_id AS proveedor, imagen FROM products"
+    "SELECT id, nombre, categoria, marca, precio_venta_detal AS precioVentaDetal, precio_venta_mayorista AS precioVentaMayorista, precio_compra AS precioCompra, stock_actual AS stockActual, stock_minimo AS stockMinimo, proveedor_id AS proveedor, imagen, activo FROM products"
   );
   const [sales] = await pool.query(
     "SELECT id, fecha, cliente_id AS clienteId, subtotal, iva, total, metodo_pago AS metodoPago FROM sales ORDER BY fecha"
   );
+  const [customerCredits] = await pool.query(
+    "SELECT id, sale_id AS saleId, customer_id AS customerId, monto, fecha FROM customer_credits ORDER BY fecha"
+  );
+  const [customerPayments] = await pool.query(
+    "SELECT id, credit_id AS creditId, monto, fecha, metodo_pago AS metodoPago, observaciones FROM customer_payments ORDER BY fecha"
+  );
   const [saleItems] = await pool.query(
-    "SELECT sale_id AS saleId, product_id AS productId, cantidad, precio FROM sale_items"
+    "SELECT sale_id AS saleId, product_id AS productId, cantidad, precio, stock_descontado AS stockDescontado FROM sale_items"
   );
   const [services] = await pool.query("SELECT id, nombre, precio_sugerido AS precioSugerido, costo_sugerido AS costoSugerido, activo FROM services");
   const [serviceItems] = await pool.query("SELECT sale_id AS saleId, service_id AS serviceId, nombre, cantidad, precio, costo, observaciones FROM sale_service_items");
@@ -28,7 +34,7 @@ async function getState() {
   const itemsBySale = new Map();
   for (const item of saleItems) {
     if (!itemsBySale.has(item.saleId)) itemsBySale.set(item.saleId, []);
-    itemsBySale.get(item.saleId).push({ productId: item.productId, cantidad: item.cantidad, precio: Number(item.precio) });
+    itemsBySale.get(item.saleId).push({ productId: item.productId, cantidad: item.cantidad, precio: Number(item.precio), stockDescontado: item.stockDescontado === undefined ? true : Boolean(item.stockDescontado) });
   }
   for (const item of serviceItems) {
     if (!itemsBySale.has(item.saleId)) itemsBySale.set(item.saleId, []);
@@ -49,7 +55,8 @@ async function getState() {
       ...p,
       precioVentaDetal: Number(p.precioVentaDetal),
       precioVentaMayorista: p.precioVentaMayorista == null ? null : Number(p.precioVentaMayorista),
-      precioCompra: Number(p.precioCompra)
+      precioCompra: Number(p.precioCompra),
+      activo: p.activo === undefined ? true : Boolean(p.activo)
     })),
     sales: sales.map(s => ({
       ...s,
@@ -58,6 +65,8 @@ async function getState() {
       total: Number(s.total),
       items: itemsBySale.get(s.id) || []
     })),
+    customerCredits: customerCredits.map(credit => ({ ...credit, monto: Number(credit.monto) })),
+    customerPayments: customerPayments.map(payment => ({ ...payment, monto: Number(payment.monto) })),
     purchases: purchases.map(p => ({
       ...p,
       iva: Number(p.iva),
@@ -77,6 +86,8 @@ async function replaceState(state) {
     await conn.query("SET FOREIGN_KEY_CHECKS = 0");
 
     await conn.query("DELETE FROM sale_service_items");
+    await conn.query("DELETE FROM customer_payments");
+    await conn.query("DELETE FROM customer_credits");
     await conn.query("DELETE FROM services");
     await conn.query("TRUNCATE TABLE sale_items");
     await conn.query("TRUNCATE TABLE purchase_items");
@@ -101,8 +112,8 @@ async function replaceState(state) {
 
     for (const p of state.products || []) {
       await conn.query(
-        "INSERT INTO products (id, nombre, categoria, marca, precio_venta_detal, precio_venta_mayorista, precio_compra, stock_actual, stock_minimo, proveedor_id, imagen) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [p.id, p.nombre, p.categoria || null, p.marca || null, p.precioVentaDetal || 0, p.precioVentaMayorista ?? null, p.precioCompra || 0, p.stockActual || 0, p.stockMinimo || 0, p.proveedor || null, p.imagen || null]
+        "INSERT INTO products (id, nombre, categoria, marca, precio_venta_detal, precio_venta_mayorista, precio_compra, stock_actual, stock_minimo, proveedor_id, imagen, activo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [p.id, p.nombre, p.categoria || null, p.marca || null, p.precioVentaDetal || 0, p.precioVentaMayorista ?? null, p.precioCompra || 0, p.stockActual || 0, p.stockMinimo || 0, p.proveedor || null, p.imagen || null, p.activo !== false]
       );
     }
 
@@ -123,10 +134,22 @@ async function replaceState(state) {
           ]);
           continue;
         }
-        await conn.query("INSERT INTO sale_items (sale_id, product_id, cantidad, precio) VALUES (?, ?, ?, ?)", [
-          s.id, item.productId, item.cantidad, item.precio
+        await conn.query("INSERT INTO sale_items (sale_id, product_id, cantidad, precio, stock_descontado) VALUES (?, ?, ?, ?, ?)", [
+          s.id, item.productId, item.cantidad, item.precio, item.stockDescontado !== false
         ]);
       }
+    }
+
+    for (const credit of state.customerCredits || []) {
+      await conn.query("INSERT INTO customer_credits (id, sale_id, customer_id, monto, fecha) VALUES (?, ?, ?, ?, ?)", [
+        credit.id, credit.saleId, credit.customerId, credit.monto, new Date(credit.fecha)
+      ]);
+    }
+
+    for (const payment of state.customerPayments || []) {
+      await conn.query("INSERT INTO customer_payments (id, credit_id, monto, fecha, metodo_pago, observaciones) VALUES (?, ?, ?, ?, ?, ?)", [
+        payment.id, payment.creditId, payment.monto, new Date(payment.fecha), payment.metodoPago, payment.observaciones || null
+      ]);
     }
 
     for (const p of state.purchases || []) {

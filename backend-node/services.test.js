@@ -12,13 +12,14 @@ function fixture() {
   return {
     products: [{ id: "product_1", nombre: "Shampoo", categoria: "Capilar", stockActual: 10, stockMinimo: 2, precioCompra: 10000, precioVentaDetal: 20000, precioVentaMayorista: 15000 }],
     services: [{ id: "service_1", nombre: "Alisado nuevo", precioSugerido: 200000, costoSugerido: null, activo: true }],
-    providers: [], customers: [], purchases: [], movements: [], sales: []
+    providers: [], customers: [], purchases: [], movements: [], sales: [], customerCredits: [], customerPayments: []
   };
 }
 
 function frontend(state = fixture(), elements = {}) {
   const context = vm.createContext({
     fixture: state, console, Intl, Date,
+    confirm: () => true,
     document: { getElementById: id => elements[id] || (id === "toastHost" ? null : ({ value: id === "metodoSelect" ? "Efectivo" : "" })) },
     setTimeout: () => {}, setInterval: () => {}
   });
@@ -93,6 +94,152 @@ test("POS usa tarifas por modalidad y separa el mismo producto por precio", () =
   assert.equal(vm.runInContext("appState.cart.length", app), 2);
 });
 
+test("métodos de pago conservan los valores existentes e incluyen opciones adicionales", () => {
+  const app = frontend();
+  const methods = JSON.parse(vm.runInContext("JSON.stringify(paymentMethods)", app));
+  assert.deepEqual(methods.map(method => method.value), [
+    "Efectivo", "Tarjeta", "Tarjeta débito", "Transferencia", "Nequi", "Daviplata", "QR", "Otro", "Credito"
+  ]);
+});
+
+test("venta a crédito exige cliente, descuenta stock y crea el saldo pendiente", async () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "Pepito", documento: "123" }];
+  const app = frontend(state, { clienteSelect: { value: "customer_1" }, metodoSelect: { value: "Credito" } });
+  app.cartFixture = [{ productId: "product_1", nombre: "Shampoo", cantidad: 2, precio: 20000 }];
+  vm.runInContext("appState.cart = cartFixture; saveDB = async () => true", app);
+
+  await app.confirmarVenta();
+
+  assert.equal(state.sales[0].metodoPago, "Credito");
+  assert.equal(state.products[0].stockActual, 8);
+  assert.equal(state.customerCredits.length, 1);
+  assert.equal(state.customerCredits[0].customerId, "customer_1");
+  assert.equal(state.customerCredits[0].monto, 40000);
+
+  const noCustomerState = fixture();
+  const noCustomerApp = frontend(noCustomerState, { clienteSelect: { value: "" }, metodoSelect: { value: "Credito" } });
+  noCustomerApp.cartFixture = [{ productId: "product_1", nombre: "Shampoo", cantidad: 1, precio: 20000 }];
+  vm.runInContext("appState.cart = cartFixture; saveDB = async () => true", noCustomerApp);
+  await noCustomerApp.confirmarVenta();
+  assert.equal(noCustomerState.sales.length, 0);
+  assert.equal(noCustomerState.products[0].stockActual, 10);
+});
+
+test("abono reduce el saldo del crédito y no permite excederlo", async () => {
+  const state = fixture();
+  state.customerCredits = [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: 500000, fecha: "2026-10-28T12:00:00Z" }];
+  const app = frontend(state);
+  vm.runInContext("saveDB = async () => true", app);
+
+  assert.equal(await app.registrarAbono("credit_1", 150000, "Nequi", "Primer abono"), true);
+  assert.equal(app.getCreditBalance(state.customerCredits[0]), 350000);
+  assert.equal(state.customerPayments[0].metodoPago, "Nequi");
+  assert.equal(await app.registrarAbono("credit_1", 400000, "Efectivo"), false);
+  assert.equal(state.customerPayments.length, 1);
+});
+
+test("Cartera presenta saldo por cliente, factura y movimientos de abono", () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "Pepito", documento: "123" }];
+  state.sales = [{ id: "sale_1", clienteId: "customer_1", fecha: "2026-10-28T12:00:00Z", total: 500000, items: [] }];
+  state.customerCredits = [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: 500000, fecha: "2026-10-28T12:00:00Z" }];
+  state.customerPayments = [{ id: "payment_1", creditId: "credit_1", monto: 150000, fecha: "2026-10-29T12:00:00Z", metodoPago: "Nequi", observaciones: "Abono inicial" }];
+  const app = frontend(state);
+
+  const cartera = app.renderCartera(state);
+  assert.ok(cartera.includes("Cartera de clientes"));
+  assert.ok(cartera.includes("Pepito"));
+  assert.ok(cartera.includes("sale_1"));
+  assert.ok(cartera.includes(vm.runInContext("formatCurrency(350000)", app)));
+  assert.ok(cartera.includes("Nequi"));
+  assert.ok(vm.runInContext('flatRoutes().some(route => route.id === "cartera")', app));
+});
+
+test("no se puede eliminar una venta a crédito que ya recibió abonos", async () => {
+  const state = fixture();
+  state.products[0].stockActual = 9;
+  state.sales = [{ id: "sale_1", total: 20000, items: [{ productId: "product_1", cantidad: 1, precio: 20000, stockDescontado: true }] }];
+  state.customerCredits = [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: 20000, fecha: "2026-10-28T12:00:00Z" }];
+  state.customerPayments = [{ id: "payment_1", creditId: "credit_1", monto: 5000, fecha: "2026-10-28T13:00:00Z", metodoPago: "Efectivo" }];
+  const app = frontend(state);
+  vm.runInContext("saveDB = async () => true", app);
+
+  await app.eliminarVenta("sale_1");
+
+  assert.equal(state.sales.length, 1);
+  assert.equal(state.products[0].stockActual, 9);
+});
+
+test("eliminar venta restaura solo el stock descontado y revierte si falla el guardado", async () => {
+  const state = fixture();
+  state.products[0].stockActual = 8;
+  state.sales = [{ id: "sale_1", total: 40000, items: [
+    { productId: "product_1", cantidad: 2, precio: 20000, stockDescontado: true },
+    { productId: "product_1", cantidad: 1, precio: 0, stockDescontado: false },
+    { ...serviceItem }
+  ] }];
+  const app = frontend(state);
+  vm.runInContext("saveDB = async () => true", app);
+  await app.eliminarVenta("sale_1");
+  assert.equal(state.sales.length, 0);
+  assert.equal(state.products[0].stockActual, 10);
+
+  state.products[0].stockActual = 8;
+  state.sales = [{ id: "sale_2", total: 40000, items: [{ productId: "product_1", cantidad: 2, precio: 20000, stockDescontado: true }] }];
+  const failedSaveApp = frontend(state);
+  vm.runInContext("saveDB = async () => false", failedSaveApp);
+  await failedSaveApp.eliminarVenta("sale_2");
+  assert.equal(state.sales.length, 1);
+  assert.equal(state.products[0].stockActual, 8);
+});
+
+test("desactivar oculta el producto del POS y borrar protege productos con historial", async () => {
+  const state = fixture();
+  const app = frontend(state);
+  vm.runInContext("saveDB = async () => true", app);
+  await app.setProductActive("product_1", false);
+  assert.equal(state.products[0].activo, false);
+  assert.doesNotMatch(app.renderPOS(state), /Shampoo/);
+
+  state.sales = [{ id: "sale_1", items: [{ productId: "product_1", cantidad: 1 }] }];
+  await app.eliminarProducto("product_1");
+  assert.equal(state.products.length, 1);
+
+  state.sales = [];
+  await app.eliminarProducto("product_1");
+  assert.equal(state.products.length, 0);
+});
+
+test("catálogo limita el ancho de Producto y permite envolver nombres largos", () => {
+  const app = frontend();
+  const catalog = app.renderProductos(fixture());
+  assert.ok(catalog.includes('class="w-full min-w-[900px] table-fixed text-sm"'));
+  assert.ok(catalog.includes('class="w-[24%] px-3 py-2 text-left">Producto'));
+  assert.ok(catalog.includes('class="break-words px-3 py-2 font-semibold"'));
+  assert.ok(catalog.includes(`class="px-3 py-2 text-right">${vm.runInContext("formatCurrency(20000)", app)}</td>`));
+  assert.ok(catalog.includes(`class="px-3 py-2 text-right">${vm.runInContext("formatCurrency(10000)", app)}</td>`));
+  assert.ok(catalog.includes('class="w-[12%] px-3 py-2 text-left">Estado'));
+});
+
+test("clientes se pueden editar y eliminar solo si no tienen ventas", async () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "María", documento: "123" }];
+  const app = frontend(state);
+  const customerList = app.renderClientes(state);
+  assert.match(customerList, /showEditCustomerModal\('customer_1'\)/);
+  assert.match(customerList, /eliminarCliente\('customer_1'\)/);
+
+  state.sales = [{ id: "sale_1", clienteId: "customer_1", items: [] }];
+  vm.runInContext("saveDB = async () => true", app);
+  await app.eliminarCliente("customer_1");
+  assert.equal(state.customers.length, 1);
+
+  state.sales = [];
+  await app.eliminarCliente("customer_1");
+  assert.equal(state.customers.length, 0);
+});
+
 test("historial conserva todas las ventas y permite filtrar por fecha con total diario", () => {
   const state = fixture();
   state.sales = Array.from({ length: 22 }, (_, index) => ({
@@ -139,9 +286,21 @@ test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async (
   state.sales = [{ id: "sale_1", fecha: "2026-10-13T12:00:00Z", total: 230000, items: [
     { productId: "product_1", cantidad: 1, precio: 20000 }, { ...serviceItem, costo: null }, { ...serviceItem, costo: 0 }
   ] }];
+  state.customers = [{ id: "customer_1", nombre: "Pepito" }];
+  state.customerCredits = [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: 20000, fecha: "2026-10-13T12:00:00Z" }];
+  state.customerPayments = [{ id: "payment_1", creditId: "credit_1", monto: 5000, fecha: "2026-10-14T12:00:00Z", metodoPago: "Nequi", observaciones: "Abono inicial" }];
+  state.products[0].activo = false;
+  state.sales[0].items[0].stockDescontado = false;
   await store.replaceState(state);
-  assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO products ")).values[5], 15000);
+  const productInsert = queries.find(query => query.sql.startsWith("INSERT INTO products "));
+  assert.equal(productInsert.values[5], 15000);
+  assert.equal(productInsert.values[11], false);
   assert.equal(queries.filter(query => query.sql.startsWith("INSERT INTO sale_items ")).length, 1);
+  assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO sale_items ")).values[4], false);
+  assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO customer_credits ")).values[2], "customer_1");
+  assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO customer_credits ")).values[3], 20000);
+  assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO customer_payments ")).values[2], 5000);
+  assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO customer_payments ")).values[4], "Nequi");
   const services = queries.filter(query => query.sql.startsWith("INSERT INTO sale_service_items "));
   assert.equal(services.length, 2);
   assert.equal(services[0].values[2], "Alisado");
@@ -156,6 +315,8 @@ test("lectura conserva el nombre historico aunque cambie el catalogo", async () 
   const tables = {
     services: [{ id: "service_1", nombre: "Nuevo nombre", precioSugerido: "200000.00", costoSugerido: null, activo: 0 }],
     sales: [{ id: "sale_1", subtotal: "180000.00", total: "180000.00", iva: "0.00" }],
+    customer_credits: [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: "500000.00", fecha: "2026-10-15T12:00:00Z" }],
+    customer_payments: [{ id: "payment_1", creditId: "credit_1", monto: "150000.00", fecha: "2026-10-16T12:00:00Z", metodoPago: "Nequi", observaciones: "Abono" }],
     sale_service_items: [{ saleId: "sale_1", serviceId: "service_1", nombre: "Alisado", cantidad: 1, precio: "180000.00", costo: "0.00", observaciones: "Cabello largo" }]
   };
   const store = backend({ query: async sql => [tables[/FROM (\w+)/.exec(sql)[1]] || []] });
@@ -166,6 +327,9 @@ test("lectura conserva el nombre historico aunque cambie el catalogo", async () 
   assert.equal(state.sales[0].items[0].precio, 180000);
   assert.equal(state.sales[0].items[0].costo, 0);
   assert.equal(state.sales[0].items[0].tipo, "servicio");
+  assert.equal(state.customerCredits[0].monto, 500000);
+  assert.equal(state.customerPayments[0].monto, 150000);
+  assert.equal(state.customerPayments[0].metodoPago, "Nequi");
 });
 
 test("servicios se filtran por mes sin entrar en inversion ni stock bajo", () => {

@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS products (
   stock_actual INT DEFAULT 0,
   stock_minimo INT DEFAULT 0,
   proveedor_id VARCHAR(50),
-  imagen VARCHAR(255)
+  imagen VARCHAR(255),
+  activo BOOLEAN NOT NULL DEFAULT TRUE
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS sales (
@@ -42,12 +43,35 @@ CREATE TABLE IF NOT EXISTS sales (
   metodo_pago VARCHAR(50)
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS customer_credits (
+  id VARCHAR(50) PRIMARY KEY,
+  sale_id VARCHAR(50) NOT NULL UNIQUE,
+  customer_id VARCHAR(50) NOT NULL,
+  monto DECIMAL(12,2) NOT NULL,
+  fecha DATETIME NOT NULL,
+  INDEX idx_customer_credits_customer_fecha (customer_id, fecha),
+  FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE,
+  FOREIGN KEY (customer_id) REFERENCES customers(id)
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS customer_payments (
+  id VARCHAR(50) PRIMARY KEY,
+  credit_id VARCHAR(50) NOT NULL,
+  monto DECIMAL(12,2) NOT NULL,
+  fecha DATETIME NOT NULL,
+  metodo_pago VARCHAR(50) NOT NULL,
+  observaciones VARCHAR(500),
+  INDEX idx_customer_payments_credit_fecha (credit_id, fecha),
+  FOREIGN KEY (credit_id) REFERENCES customer_credits(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS sale_items (
   id INT AUTO_INCREMENT PRIMARY KEY,
   sale_id VARCHAR(50) NOT NULL,
   product_id VARCHAR(50) NOT NULL,
   cantidad INT NOT NULL,
   precio DECIMAL(12,2) NOT NULL,
+  stock_descontado BOOLEAN NOT NULL DEFAULT TRUE,
   FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
