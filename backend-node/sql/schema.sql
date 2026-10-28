@@ -7,7 +7,8 @@ CREATE TABLE IF NOT EXISTS providers (
   nombre VARCHAR(150) NOT NULL,
   contacto VARCHAR(150),
   telefono VARCHAR(50),
-  email VARCHAR(150)
+  email VARCHAR(150),
+  activo BOOLEAN NOT NULL DEFAULT TRUE
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS customers (

@@ -290,8 +290,11 @@ test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async (
   state.customerCredits = [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: 20000, fecha: "2026-10-13T12:00:00Z" }];
   state.customerPayments = [{ id: "payment_1", creditId: "credit_1", monto: 5000, fecha: "2026-10-14T12:00:00Z", metodoPago: "Nequi", observaciones: "Abono inicial" }];
   state.products[0].activo = false;
+  state.providers = [{ id: "provider_1", nombre: "Proveedor", activo: false }];
   state.sales[0].items[0].stockDescontado = false;
   await store.replaceState(state);
+  const providerInsert = queries.find(query => query.sql.startsWith("INSERT INTO providers "));
+  assert.equal(providerInsert.values[5], false);
   const productInsert = queries.find(query => query.sql.startsWith("INSERT INTO products "));
   assert.equal(productInsert.values[5], 15000);
   assert.equal(productInsert.values[11], false);
@@ -322,6 +325,7 @@ test("esquema de cartera evita foreign keys incompatibles con tablas antiguas", 
 
 test("lectura conserva el nombre historico aunque cambie el catalogo", async () => {
   const tables = {
+    providers: [{ id: "provider_1", nombre: "Proveedor", activo: 0 }],
     services: [{ id: "service_1", nombre: "Nuevo nombre", precioSugerido: "200000.00", costoSugerido: null, activo: 0 }],
     sales: [{ id: "sale_1", subtotal: "180000.00", total: "180000.00", iva: "0.00" }],
     customer_credits: [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: "500000.00", fecha: "2026-10-15T12:00:00Z" }],
@@ -330,6 +334,7 @@ test("lectura conserva el nombre historico aunque cambie el catalogo", async () 
   };
   const store = backend({ query: async sql => [tables[/FROM (\w+)/.exec(sql)[1]] || []] });
   const state = await store.getState();
+  assert.equal(state.providers[0].activo, false);
   assert.equal(state.services[0].activo, false);
   assert.equal(state.services[0].costoSugerido, null);
   assert.equal(state.sales[0].items[0].nombre, "Alisado");
@@ -425,4 +430,30 @@ test("catalogo prioriza el servicio activo sobre una copia inicial inactiva", ()
   assert.equal((catalog.match(/>Alisado<\/td>/g) || []).length, 1);
   assert.match(catalog, /250[.\s]000/);
   assert.doesNotMatch(catalog, /Inactivo/);
+});
+
+test("proveedores se muestran en tabla y protegen historial al eliminar", async () => {
+  const state = fixture();
+  state.providers = [{ id: "provider_1", nombre: "Proveedor Uno", contacto: "Ana", telefono: "123", email: "ana@example.com", activo: false }];
+  const app = frontend(state);
+  const table = vm.runInContext("renderProveedores(fixture)", app);
+  assert.match(table, /<table/);
+  assert.match(table, /Proveedor Uno/);
+  assert.match(table, /Inactivo/);
+  assert.match(table, /setProviderActive\('provider_1', true\)/);
+  assert.match(table, /eliminarProveedor\('provider_1'\)/);
+
+  state.products[0].proveedor = "provider_1";
+  await app.eliminarProveedor("provider_1");
+  assert.equal(state.providers.length, 1);
+});
+
+test("proveedor inactivo conserva su estado al guardar y puede reactivarse", async () => {
+  const state = fixture();
+  const provider = { id: "provider_1", nombre: "Proveedor Uno", activo: false };
+  state.providers.push(provider);
+  const app = frontend(state);
+  vm.runInContext("saveDB = async () => true;", app);
+  await app.setProviderActive("provider_1", true);
+  assert.equal(provider.activo, true);
 });

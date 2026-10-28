@@ -2,7 +2,7 @@ const pool = require("./db");
 
 // Convierte las filas de MySQL al mismo shape (camelCase) que usa sistema-completo.html
 async function getState() {
-  const [providers] = await pool.query("SELECT id, nombre, contacto, telefono, email FROM providers");
+  const [providers] = await pool.query("SELECT id, nombre, contacto, telefono, email, activo FROM providers");
   const [customers] = await pool.query("SELECT id, nombre, documento, telefono, correo FROM customers");
   const [products] = await pool.query(
     "SELECT id, nombre, categoria, marca, precio_venta_detal AS precioVentaDetal, precio_venta_mayorista AS precioVentaMayorista, precio_compra AS precioCompra, stock_actual AS stockActual, stock_minimo AS stockMinimo, proveedor_id AS proveedor, imagen, activo FROM products"
@@ -48,7 +48,7 @@ async function getState() {
   }
 
   return {
-    providers,
+    providers: providers.map(provider => ({ ...provider, activo: provider.activo === undefined ? true : Boolean(provider.activo) })),
     customers,
     services: services.map(service => ({ ...service, precioSugerido: service.precioSugerido == null ? null : Number(service.precioSugerido), costoSugerido: service.costoSugerido == null ? null : Number(service.costoSugerido), activo: Boolean(service.activo) })),
     products: products.map(p => ({
@@ -99,8 +99,8 @@ async function replaceState(state) {
     await conn.query("TRUNCATE TABLE providers");
 
     for (const p of state.providers || []) {
-      await conn.query("INSERT INTO providers (id, nombre, contacto, telefono, email) VALUES (?, ?, ?, ?, ?)", [
-        p.id, p.nombre, p.contacto || null, p.telefono || null, p.email || null
+      await conn.query("INSERT INTO providers (id, nombre, contacto, telefono, email, activo) VALUES (?, ?, ?, ?, ?, ?)", [
+        p.id, p.nombre, p.contacto || null, p.telefono || null, p.email || null, p.activo !== false
       ]);
     }
 

@@ -17,6 +17,11 @@ async function ensureSchema() {
       await conn.query(statement);
     }
 
+    const [providerActiveColumn] = await conn.query("SHOW COLUMNS FROM providers LIKE 'activo'");
+    if (providerActiveColumn.length === 0) {
+      await conn.query("ALTER TABLE providers ADD COLUMN activo BOOLEAN NOT NULL DEFAULT TRUE");
+    }
+
     const [columns] = await conn.query("SHOW COLUMNS FROM products LIKE 'precio_venta_mayorista'");
     if (columns.length === 0) {
       await conn.query("ALTER TABLE products ADD COLUMN precio_venta_mayorista DECIMAL(12,2) DEFAULT NULL");
