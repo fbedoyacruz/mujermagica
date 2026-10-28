@@ -10,7 +10,7 @@ const serviceItem = { tipo: "servicio", serviceId: "service_1", nombre: "Alisado
 
 function fixture() {
   return {
-    products: [{ id: "product_1", nombre: "Shampoo", categoria: "Capilar", stockActual: 10, stockMinimo: 2, precioCompra: 10000 }],
+    products: [{ id: "product_1", nombre: "Shampoo", categoria: "Capilar", stockActual: 10, stockMinimo: 2, precioCompra: 10000, precioVentaDetal: 20000, precioVentaMayorista: 15000 }],
     services: [{ id: "service_1", nombre: "Alisado nuevo", precioSugerido: 200000, costoSugerido: null, activo: true }],
     providers: [], customers: [], purchases: [], movements: [], sales: []
   };
@@ -69,6 +69,30 @@ test("cobro mixto guarda el precio acordado y solo descuenta productos", async (
   assert.equal(vm.runInContext("appState.cart.length", app), 0);
 });
 
+test("POS usa tarifas por modalidad y separa el mismo producto por precio", () => {
+  const state = fixture();
+  const app = frontend(state);
+  vm.runInContext('setPosTab("productos")', app);
+  assert.equal(vm.runInContext("getPosPriceMode()", app), "detal");
+  assert.equal(vm.runInContext("getProductSalePrice(fixture.products[0])", app), 20000);
+
+  vm.runInContext(`
+    appState.cart = [];
+    addToCartQty("product_1", "Shampoo", 20000);
+    setPosTab("mayorista");
+    addToCartQty("product_1", "Shampoo", 15000);
+  `, app);
+
+  const cart = JSON.parse(vm.runInContext("JSON.stringify(appState.cart)", app));
+  assert.deepEqual(cart.map(item => [item.precio, item.tipoPrecio]), [[20000, "detal"], [15000, "mayorista"]]);
+  assert.equal(vm.runInContext("getProductSalePrice(fixture.products[0])", app), 15000);
+
+  state.products[0].precioVentaMayorista = null;
+  const missingWholesalePrice = vm.runInContext("getProductSalePrice(fixture.products[0])", app);
+  vm.runInContext(`addToCartQty("product_1", "Shampoo", ${Number(missingWholesalePrice)})`, app);
+  assert.equal(vm.runInContext("appState.cart.length", app), 2);
+});
+
 test("cobro de servicios no altera existencias y un fallo conserva el carrito", async () => {
   const state = fixture();
   const app = frontend(state);
@@ -93,6 +117,7 @@ test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async (
     { productId: "product_1", cantidad: 1, precio: 20000 }, { ...serviceItem, costo: null }, { ...serviceItem, costo: 0 }
   ] }];
   await store.replaceState(state);
+  assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO products ")).values[5], 15000);
   assert.equal(queries.filter(query => query.sql.startsWith("INSERT INTO sale_items ")).length, 1);
   const services = queries.filter(query => query.sql.startsWith("INSERT INTO sale_service_items "));
   assert.equal(services.length, 2);

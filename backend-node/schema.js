@@ -16,6 +16,11 @@ async function ensureSchema() {
     for (const statement of statements) {
       await conn.query(statement);
     }
+
+    const [columns] = await conn.query("SHOW COLUMNS FROM products LIKE 'precio_venta_mayorista'");
+    if (columns.length === 0) {
+      await conn.query("ALTER TABLE products ADD COLUMN precio_venta_mayorista DECIMAL(12,2) DEFAULT NULL");
+    }
   } finally {
     conn.release();
   }

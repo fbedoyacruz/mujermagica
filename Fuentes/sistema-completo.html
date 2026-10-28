@@ -702,6 +702,10 @@
               <input type="number" id="productPriceSell" value="${product?.precioVentaDetal || ""}" min="0" class="w-full px-3 py-2 border rounded-lg text-sm" required />
             </div>
           </div>
+          <div>
+            <label class="block text-sm font-semibold mb-1">Precio al por mayor (opcional)</label>
+            <input type="number" id="productPriceWholesale" value="${product?.precioVentaMayorista ?? ""}" min="0.01" step="0.01" class="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Dejar vacío si no aplica" />
+          </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label class="block text-sm font-semibold mb-1">Stock actual</label>
@@ -765,6 +769,8 @@
         const brand = document.getElementById("productBrand").value.trim();
         const priceBuy = Number(document.getElementById("productPriceBuy").value);
         const priceSell = Number(document.getElementById("productPriceSell").value);
+        const wholesalePriceInput = document.getElementById("productPriceWholesale").value.trim();
+        const wholesalePrice = wholesalePriceInput === "" ? null : Number(wholesalePriceInput);
         const stock = Number(document.getElementById("productStock").value);
         const stockMinimo = Number(document.getElementById("productMinStock").value);
         const providerId = document.getElementById("productProvider").value;
@@ -791,7 +797,7 @@
           image = "images/shampoo_cebolla.jpg";
         }
 
-        if (!name || !category || !brand || Number.isNaN(priceBuy) || Number.isNaN(priceSell)) {
+        if (!name || !category || !brand || Number.isNaN(priceBuy) || Number.isNaN(priceSell) || (wholesalePrice !== null && (!Number.isFinite(wholesalePrice) || wholesalePrice <= 0))) {
           showToast("Completa los campos obligatorios", "warning");
           return;
         }
@@ -806,6 +812,7 @@
             imagen: image,
             precioCompra: priceBuy,
             precioVentaDetal: priceSell,
+            precioVentaMayorista: wholesalePrice,
             stockActual: stock,
             stockMinimo,
             fechaIngreso: today
@@ -820,6 +827,7 @@
           product.imagen = image;
           product.precioCompra = priceBuy;
           product.precioVentaDetal = priceSell;
+          product.precioVentaMayorista = wholesalePrice;
           product.stockActual = stock;
           product.stockMinimo = stockMinimo;
           showToast("Producto actualizado", "success");
@@ -933,7 +941,7 @@
     }
 
     function setPosTab(tab) {
-      if (!["productos", "servicios"].includes(tab)) return;
+      if (!["productos", "servicios", "mayorista"].includes(tab)) return;
       appState.posTab = tab;
       renderView();
     }
@@ -967,13 +975,17 @@
         const matchesCategory = !selectedCategory || (p.categoria || "").trim() === selectedCategory;
         return matchesSearch && matchesBrand && matchesCategory;
       });
+      const priceMode = appState.posTab === "mayorista" ? "mayorista" : "detal";
+      const isWholesale = priceMode === "mayorista";
       const cards = filtered.map(p => {
+        const price = Number(getProductSalePrice(p, priceMode));
+        const priceAvailable = Number.isFinite(price) && price > 0;
         const stock = p.stockActual > 20 ? "bg-emerald-100 text-emerald-700" : p.stockActual > 10 ? "bg-amber-100 text-amber-700" : p.stockActual > 5 ? "bg-orange-100 text-orange-700" : "bg-red-100 text-red-700";
         return `<div class="product-card border rounded-lg p-3 flex flex-col h-full">
           <img src="${p.imagen}" alt="${p.nombre}" class="w-full h-32 object-cover rounded-lg mb-2" />
           <h4 class="font-semibold text-sm">${p.nombre}</h4>
           <p class="text-xs text-slate-500">${p.marca}</p>
-          <p class="text-lg font-bold text-slate-900 mt-1">${formatCurrency(p.precioVentaDetal)}</p>
+          <p class="text-lg font-bold text-slate-900 mt-1">${isWholesale && !priceAvailable ? "Sin precio mayorista" : formatCurrency(price)}</p>
           <span class="stock-badge ${stock} text-xs inline-block mt-1">Stock: ${p.stockActual}</span>
           <div class="mt-auto pt-3 space-y-2">
             <div class="flex items-center gap-2">
@@ -981,7 +993,7 @@
               <input type="number" id="qty-${p.id}" value="1" min="1" max="${p.stockActual}" class="flex-1 px-2 py-1 border border-slate-300 rounded text-center text-sm font-semibold" />
               <button onclick="changeQuantity('${p.id}', 1)" class="w-8 h-8 bg-slate-200 hover:bg-slate-300 rounded font-bold text-sm">+</button>
             </div>
-            <button onclick="addToCartQty('${p.id}', '${p.nombre}', ${p.precioVentaDetal})" class="w-full bg-slate-900 text-white px-2 py-2 rounded font-semibold text-sm hover:bg-slate-800">Agregar al carrito</button>
+            <button onclick="addToCartQty('${p.id}', '${p.nombre}', ${priceAvailable ? price : 0}, '${priceMode}')" class="w-full bg-slate-900 text-white px-2 py-2 rounded font-semibold text-sm hover:bg-slate-800" ${priceAvailable ? "" : "disabled"}>Agregar al carrito</button>
           </div>
         </div>`;
       }).join("");
@@ -992,7 +1004,7 @@
         <div class="bg-white p-3 rounded-lg border space-y-2">
           <div>
             <p class="font-semibold text-sm break-words">${escapeHtml(item.nombre)}</p>
-            <p class="text-xs text-slate-500">${formatCurrency(item.precio)} c/u</p>
+            <p class="text-xs text-slate-500">${formatCurrency(item.precio)} c/u${item.tipo === "servicio" ? "" : ` · ${item.tipoPrecio === "mayorista" ? "Por mayor" : "Al detal"}`}</p>
             ${item.tipo === "servicio" ? `<p class="text-xs text-slate-500 break-words">Servicio${item.observaciones ? `: ${escapeHtml(item.observaciones)}` : ""}</p><button type="button" onclick="showServiceSaleModal(null, ${idx})" class="text-xs font-semibold text-teal-700">Editar precio y detalles</button>` : ""}
           </div>
           <div class="flex items-center gap-2">
@@ -1025,7 +1037,7 @@
         ? `No hay productos para ${activeFilters.join(" y ")}.`
         : "No hay productos disponibles con ese criterio.";
       const serviceOptions = (st.services || []).filter(service => service.activo !== false && service.nombre.toLowerCase().includes(criteria)).map(service => `<option value="${escapeHtml(service.id)}" data-price="${service.precioSugerido ?? ""}" data-cost="${service.costoSugerido ?? ""}" ${service.id === appState.selectedPosServiceId ? "selected" : ""}>${escapeHtml(service.nombre)}${service.precioSugerido == null ? " · Precio variable" : ` · ${formatCurrency(service.precioSugerido)}`}</option>`).join("");
-      const tabs = `<div role="tablist" aria-label="Tipo de venta" class="flex border-b mb-4"><button type="button" role="tab" aria-selected="${appState.posTab === "productos"}" onclick="setPosTab('productos')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "productos" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Productos</button><button type="button" role="tab" aria-selected="${appState.posTab === "servicios"}" onclick="setPosTab('servicios')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "servicios" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Servicios</button></div>`;
+      const tabs = `<div role="tablist" aria-label="Tipo de venta" class="flex border-b mb-4"><button type="button" role="tab" aria-selected="${appState.posTab === "productos"}" onclick="setPosTab('productos')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "productos" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Productos</button><button type="button" role="tab" aria-selected="${appState.posTab === "servicios"}" onclick="setPosTab('servicios')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "servicios" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Servicios</button><button type="button" role="tab" aria-selected="${appState.posTab === "mayorista"}" onclick="setPosTab('mayorista')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "mayorista" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Por mayor</button></div>`;
 
       return `
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
@@ -1184,16 +1196,29 @@
       renderView();
     }
 
+    function getPosPriceMode() {
+      return appState.posTab === "mayorista" ? "mayorista" : "detal";
+    }
+
+    function getProductSalePrice(product, mode = getPosPriceMode()) {
+      return mode === "mayorista" ? product.precioVentaMayorista : product.precioVentaDetal;
+    }
+
     function updateCartBadge() {
       document.querySelector(".cart-badge").textContent = appState.cart.length;
     }
 
     function addToCart(productId, nombre, precio) {
-      const existing = appState.cart.find(c => c.productId === productId);
+      const tipoPrecio = getPosPriceMode();
+      if (tipoPrecio === "mayorista" && (!Number.isFinite(Number(precio)) || Number(precio) <= 0)) {
+        showToast("Este producto no tiene precio mayorista registrado", "warning");
+        return;
+      }
+      const existing = appState.cart.find(c => c.productId === productId && (c.tipoPrecio || "detal") === tipoPrecio);
       if (existing) {
         existing.cantidad += 1;
       } else {
-        appState.cart.push({ productId, nombre, precio, cantidad: 1 });
+        appState.cart.push({ productId, nombre, precio, cantidad: 1, tipoPrecio });
       }
       showToast(`${nombre} agregado al carrito`, "success");
       updateCartBadge();
@@ -1209,15 +1234,19 @@
       input.value = newValue;
     }
 
-    function addToCartQty(productId, nombre, precio) {
+    function addToCartQty(productId, nombre, precio, tipoPrecio = getPosPriceMode()) {
+      if (tipoPrecio === "mayorista" && (!Number.isFinite(Number(precio)) || Number(precio) <= 0)) {
+        showToast("Este producto no tiene precio mayorista registrado", "warning");
+        return;
+      }
       const input = document.getElementById(`qty-${productId}`);
       const cantidad = parseInt(input.value) || 1;
       
-      const existing = appState.cart.find(c => c.productId === productId);
+      const existing = appState.cart.find(c => c.productId === productId && (c.tipoPrecio || "detal") === tipoPrecio);
       if (existing) {
         existing.cantidad += cantidad;
       } else {
-        appState.cart.push({ productId, nombre, precio, cantidad });
+        appState.cart.push({ productId, nombre, precio, cantidad, tipoPrecio });
       }
       
       showToast(`${cantidad}x ${nombre} agregado al carrito`, "success");

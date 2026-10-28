@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS products (
   categoria VARCHAR(100),
   marca VARCHAR(100),
   precio_venta_detal DECIMAL(12,2) DEFAULT 0,
+  precio_venta_mayorista DECIMAL(12,2) DEFAULT NULL,
   precio_compra DECIMAL(12,2) DEFAULT 0,
   stock_actual INT DEFAULT 0,
   stock_minimo INT DEFAULT 0,
