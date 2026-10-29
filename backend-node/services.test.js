@@ -67,6 +67,8 @@ test("migración de nacimiento agrega la columna solo si falta", async () => {
     vm.runInContext(fs.readFileSync(path.join(__dirname, "schema.js"), "utf8"), context);
     await context.module.exports();
     assert.equal(queries.filter(sql => sql === "ALTER TABLE customers ADD COLUMN fecha_nacimiento DATE NULL").length, missing ? 1 : 0);
+    assert.equal(queries.filter(sql => sql === "ALTER TABLE products ADD COLUMN codigo_barras VARCHAR(100) NULL").length, missing ? 1 : 0);
+    assert.equal(queries.filter(sql => sql === "ALTER TABLE products ADD UNIQUE KEY uq_products_codigo_barras (codigo_barras)").length, 1);
   }
 });
 
@@ -195,6 +197,41 @@ test("POS usa tarifas por modalidad y separa el mismo producto por precio", () =
   assert.equal(vm.runInContext("appState.cart.length", app), 2);
 });
 
+test("lector de barras agrega por código, conserva ceros iniciales y respeta stock/modalidad", () => {
+  const state = fixture();
+  state.products[0].codigoBarras = "165840";
+  state.products[0].stockActual = 2;
+  const scanner = { value: "165840" };
+  const app = frontend(state, { barcodeScannerInput: scanner });
+  const pos = app.renderPOS(state);
+  const catalog = app.renderProductos(state);
+  assert.match(pos, /id="barcodeScannerInput"/);
+  assert.match(pos, /handleBarcodeScanner\(event\)/);
+  assert.match(catalog, /Código de barras/);
+  assert.match(html, /id="productBarcode"/);
+
+  let prevented = false;
+  app.handleBarcodeScanner({ key: "Enter", preventDefault: () => { prevented = true; } });
+  assert.equal(prevented, true);
+  assert.equal(scanner.value, "");
+  assert.equal(state.products[0].codigoBarras, "165840");
+  assert.equal(vm.runInContext("appState.cart[0].productId", app), "product_1");
+  assert.equal(vm.runInContext("appState.cart[0].cantidad", app), 1);
+
+  app.procesarCodigoBarras("165840");
+  assert.equal(vm.runInContext("appState.cart[0].cantidad", app), 2);
+  app.procesarCodigoBarras("165840");
+  assert.equal(vm.runInContext("appState.cart[0].cantidad", app), 2);
+
+  const wholesaleState = fixture();
+  wholesaleState.products[0].codigoBarras = "165840";
+  wholesaleState.products[0].precioVentaMayorista = null;
+  const wholesaleApp = frontend(wholesaleState);
+  wholesaleApp.setPosTab("mayorista");
+  wholesaleApp.procesarCodigoBarras("165840");
+  assert.equal(vm.runInContext("appState.cart.length", wholesaleApp), 0);
+});
+
 test("métodos de pago conservan los valores existentes e incluyen opciones adicionales", () => {
   const app = frontend();
   const methods = JSON.parse(vm.runInContext("JSON.stringify(paymentMethods)", app));
@@ -315,12 +352,13 @@ test("desactivar oculta el producto del POS y borrar protege productos con histo
 test("catálogo limita el ancho de Producto y permite envolver nombres largos", () => {
   const app = frontend();
   const catalog = app.renderProductos(fixture());
-  assert.ok(catalog.includes('class="w-full min-w-[900px] table-fixed text-sm"'));
-  assert.ok(catalog.includes('class="w-[24%] px-3 py-2 text-left">Producto'));
+  assert.ok(catalog.includes('class="w-full min-w-[1100px] table-fixed text-sm"'));
+  assert.ok(catalog.includes('class="w-[20%] px-3 py-2 text-left">Producto'));
+  assert.ok(catalog.includes('>Código de barras</th>'));
   assert.ok(catalog.includes('class="break-words px-3 py-2 font-semibold"'));
   assert.ok(catalog.includes(`class="px-3 py-2 text-right">${vm.runInContext("formatCurrency(20000)", app)}</td>`));
   assert.ok(catalog.includes(`class="px-3 py-2 text-right">${vm.runInContext("formatCurrency(10000)", app)}</td>`));
-  assert.ok(catalog.includes('class="w-[12%] px-3 py-2 text-left">Estado'));
+  assert.ok(catalog.includes('class="w-[10%] px-3 py-2 text-left">Estado'));
 });
 
 test("clientes se pueden editar y eliminar solo si no tienen ventas", async () => {
@@ -391,6 +429,7 @@ test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async (
   state.customerCredits = [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: 20000, fecha: "2026-10-13T12:00:00Z" }];
   state.customerPayments = [{ id: "payment_1", creditId: "credit_1", monto: 5000, fecha: "2026-10-14T12:00:00Z", metodoPago: "Nequi", observaciones: "Abono inicial" }];
   state.products[0].activo = false;
+  state.products[0].codigoBarras = "00165840";
   state.providers = [{ id: "provider_1", nombre: "Proveedor", activo: false }];
   state.sales[0].items[0].stockDescontado = false;
   await store.replaceState(state);
@@ -399,6 +438,7 @@ test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async (
   const productInsert = queries.find(query => query.sql.startsWith("INSERT INTO products "));
   assert.equal(productInsert.values[5], 15000);
   assert.equal(productInsert.values[11], false);
+  assert.equal(productInsert.values[12], "00165840");
   assert.equal(queries.filter(query => query.sql.startsWith("INSERT INTO sale_items ")).length, 1);
   assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO sale_items ")).values[4], false);
   assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO customer_credits ")).values[2], "customer_1");
@@ -427,6 +467,7 @@ test("esquema de cartera evita foreign keys incompatibles con tablas antiguas", 
 test("lectura conserva el nombre historico aunque cambie el catalogo", async () => {
   const tables = {
     providers: [{ id: "provider_1", nombre: "Proveedor", activo: 0 }],
+    products: [{ id: "product_1", nombre: "Shampoo", precioVentaDetal: "20000.00", precioCompra: "10000.00", codigoBarras: "00165840", activo: 1 }],
     services: [{ id: "service_1", nombre: "Nuevo nombre", precioSugerido: "200000.00", costoSugerido: null, activo: 0 }],
     sales: [{ id: "sale_1", subtotal: "180000.00", total: "180000.00", iva: "0.00" }],
     customer_credits: [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: "500000.00", fecha: "2026-10-15T12:00:00Z" }],
@@ -436,6 +477,7 @@ test("lectura conserva el nombre historico aunque cambie el catalogo", async () 
   const store = backend({ query: async sql => [tables[/FROM (\w+)/.exec(sql)[1]] || []] });
   const state = await store.getState();
   assert.equal(state.providers[0].activo, false);
+  assert.equal(state.products[0].codigoBarras, "00165840");
   assert.equal(state.services[0].activo, false);
   assert.equal(state.services[0].costoSugerido, null);
   assert.equal(state.sales[0].items[0].nombre, "Alisado");
@@ -519,6 +561,48 @@ test("historial lista cada procedimiento cobrado y permite abrir su factura", ()
   assert.match(history, /verFactura\(this.dataset.saleId\)/);
   assert.doesNotMatch(history, /Shampoo/);
   assert.doesNotMatch(app.renderServicios(state, "Castaño"), /Terapia capilar/);
+});
+
+test("recibo para impresora térmica de 58 mm incluye datos y detalle sin imprimir la aplicación", () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "María López", documento: "12345" }];
+  state.sales = [{ id: "sale_thermal_1", fecha: "2026-10-29T12:00:00Z", clienteId: "customer_1", metodoPago: "Efectivo", subtotal: 230000, iva: 0, total: 230000, items: [
+    { productId: "product_1", cantidad: 2, precio: 25000 },
+    { ...serviceItem, nombre: "Terapia capilar", precio: 180000, observaciones: "Cabello largo" }
+  ] }];
+  let invoiceMarkup = "";
+  const printRoot = { innerHTML: "" };
+  let printCalls = 0;
+  const app = frontend(state, {
+    modalContent: { innerHTML: "", appendChild: element => { invoiceMarkup = element.innerHTML; } },
+    modalBackdrop: { classList: { add: () => {}, remove: () => {} } },
+    thermalPrintRoot: printRoot
+  });
+  app.document.createElement = () => ({ className: "", innerHTML: "" });
+  app.window = { print: () => { printCalls += 1; } };
+  app.verFactura("sale_thermal_1");
+  assert.match(printRoot.innerHTML, /id="thermalReceipt"/);
+  assert.match(printRoot.innerHTML, /ANDRE CG/);
+  assert.match(printRoot.innerHTML, /María López/);
+  assert.match(printRoot.innerHTML, /12345/);
+  assert.match(printRoot.innerHTML, /Terapia capilar/);
+  assert.match(printRoot.innerHTML, /Cabello largo/);
+  assert.match(printRoot.innerHTML, /IVA/);
+  assert.match(printRoot.innerHTML, /RECIBO DE VENTA/);
+  assert.match(printRoot.innerHTML, /src="Logo_AndreCG_thermal\.png"/);
+  assert.match(printRoot.innerHTML, /ANDRE CG/);
+  assert.match(printRoot.innerHTML, /Mujer Mágica - Tienda de belleza/);
+  assert.match(printRoot.innerHTML, /Centro comercial Feria de los Plátanos, local 3 - Armenia/);
+  assert.match(printRoot.innerHTML, /Tel: 3175769914/);
+  assert.doesNotMatch(printRoot.innerHTML, /900\.123\.456-7/);
+  assert.ok(fs.existsSync(path.join(__dirname, "../Fuentes/Logo_AndreCG.jpg")));
+  assert.ok(fs.existsSync(path.join(__dirname, "../Fuentes/Logo_AndreCG_thermal.png")));
+  assert.match(html, /@page \{ margin: 0; \}/);
+  assert.match(html, /width: 48mm !important/);
+  assert.match(html, /body > :not\(#thermalPrintRoot\) \{ display: none !important/);
+  assert.doesNotMatch(html, /#thermalReceipt \{ position: fixed/);
+  app.imprimirFactura();
+  assert.equal(printCalls, 1);
 });
 
 test("catalogo prioriza el servicio activo sobre una copia inicial inactiva", () => {

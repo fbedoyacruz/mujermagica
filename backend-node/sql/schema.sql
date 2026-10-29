@@ -32,7 +32,9 @@ CREATE TABLE IF NOT EXISTS products (
   stock_minimo INT DEFAULT 0,
   proveedor_id VARCHAR(50),
   imagen VARCHAR(255),
-  activo BOOLEAN NOT NULL DEFAULT TRUE
+  activo BOOLEAN NOT NULL DEFAULT TRUE,
+  codigo_barras VARCHAR(100) NULL,
+  UNIQUE KEY uq_products_codigo_barras (codigo_barras)
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS sales (

@@ -55,6 +55,28 @@
     @media (max-width: 1024px) { #toggleSidebar { display: flex; } }
     main { flex: 1; }
     .cart-alerts-top { display: flex; gap: 8px; align-items: center; z-index: 20; flex-wrap: wrap; }
+    .thermal-receipt { display: none; }
+    #thermalPrintRoot { display: none; }
+    @media print {
+      @page { margin: 0; }
+      html, body { width: 58mm !important; min-width: 0 !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; background: #fff !important; }
+      body > :not(#thermalPrintRoot) { display: none !important; }
+      #thermalPrintRoot { display: block !important; position: static !important; width: 58mm !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 0 !important; overflow: visible !important; }
+      #thermalReceipt, #thermalReceipt * { visibility: visible !important; }
+      #thermalReceipt { position: static !important; display: block !important; width: 48mm !important; min-height: 0 !important; height: auto !important; margin: 0 !important; padding: 3mm 1mm !important; color: #000 !important; background: #fff !important; font: 9pt/1.25 Arial, sans-serif !important; box-sizing: border-box !important; }
+      #thermalReceipt .receipt-center { text-align: center !important; }
+      #thermalReceipt .receipt-title { font-size: 12pt !important; font-weight: 700 !important; }
+      #thermalReceipt .receipt-separator { border-top: 1px dashed #000 !important; margin: 2mm 0 !important; }
+      #thermalReceipt .receipt-line { margin: 1.5mm 0 !important; break-inside: avoid; }
+      #thermalReceipt .receipt-item-name { font-weight: 700 !important; overflow-wrap: anywhere !important; }
+      #thermalReceipt .receipt-detail { display: flex !important; justify-content: space-between !important; gap: 2mm !important; }
+      #thermalReceipt .receipt-total { font-size: 11pt !important; font-weight: 700 !important; }
+      #thermalReceipt .receipt-small { font-size: 8pt !important; overflow-wrap: anywhere !important; }
+      #thermalReceipt .receipt-logo { display: block !important; width: 23mm !important; height: auto !important; margin: 0 auto 2mm !important; object-fit: contain !important; }
+      #thermalReceipt .receipt-address { font-size: 7.5pt !important; overflow-wrap: anywhere !important; }
+      #thermalReceipt .receipt-amount { white-space: nowrap !important; }
+      #toggleSidebar, #modalHeader, .modal-header, .modal-footer, #toastHost { display: none !important; }
+    }
   </style>
 </head>
 <body class="app-bg text-slate-800">
@@ -94,6 +116,7 @@
 
   <div id="toastHost" class="pointer-events-none fixed bottom-5 right-5 z-50 space-y-2"></div>
   <div id="modalBackdrop" class="modal-backdrop"><div id="modalContent"></div></div>
+  <div id="thermalPrintRoot" aria-hidden="true"></div>
 
   <script>
     // ==================== UTILIDADES ====================
@@ -526,13 +549,13 @@
 
     function renderProductos(st, search = "") {
       const criteria = search.toLowerCase();
-      const filtered = st.products.filter(p => !criteria || p.nombre.toLowerCase().includes(criteria));
+      const filtered = st.products.filter(p => !criteria || `${p.nombre} ${p.codigoBarras || ""}`.toLowerCase().includes(criteria));
       const rows = filtered.map(p => {
         const estado = getEstadoStock(p);
         const isActive = p.activo !== false;
-        return `<tr class="border-b text-sm hover:bg-slate-50"><td class="break-words px-3 py-2 font-semibold">${escapeHtml(p.nombre)}</td><td class="px-3 py-2">${escapeHtml(p.marca || "-")}</td><td class="px-3 py-2 text-right">${formatCurrency(p.precioVentaDetal)}</td><td class="px-3 py-2 text-right">${formatCurrency(p.precioCompra)}</td><td class="px-3 py-2 text-right">${p.stockActual}</td><td class="px-3 py-2"><div class="flex flex-col items-start gap-1"><span class="stock-badge ${estado.color === 'text-emerald-700' ? 'bg-emerald-100 text-emerald-700' : estado.color === 'text-amber-700' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${estado.estado}</span><span class="text-xs ${isActive ? "text-emerald-700" : "text-slate-500"}">${isActive ? "Activo" : "Inactivo"}</span></div></td><td class="px-3 py-2"><div class="flex items-center justify-center gap-1"><button type="button" aria-label="Editar ${escapeHtml(p.nombre)}" title="Editar producto" onclick="showEditProductModal('${escapeHtml(p.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900">✏️</button><button type="button" aria-label="${isActive ? "Desactivar" : "Activar"} ${escapeHtml(p.nombre)}" title="${isActive ? "Desactivar producto" : "Activar producto"}" onclick="setProductActive('${escapeHtml(p.id)}', ${!isActive})" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm ${isActive ? "text-teal-700 hover:bg-teal-50" : "text-emerald-700 hover:bg-emerald-50"}">⏻</button><button type="button" aria-label="Eliminar ${escapeHtml(p.nombre)}" title="Eliminar producto" onclick="eliminarProducto('${escapeHtml(p.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-red-700 hover:bg-red-50">🗑️</button></div></td></tr>`;
+        return `<tr class="border-b text-sm hover:bg-slate-50"><td class="break-words px-3 py-2 font-semibold">${escapeHtml(p.nombre)}</td><td class="px-3 py-2 font-mono text-xs">${escapeHtml(p.codigoBarras || "-")}</td><td class="px-3 py-2">${escapeHtml(p.marca || "-")}</td><td class="px-3 py-2 text-right">${formatCurrency(p.precioVentaDetal)}</td><td class="px-3 py-2 text-right">${formatCurrency(p.precioCompra)}</td><td class="px-3 py-2 text-right">${p.stockActual}</td><td class="px-3 py-2"><div class="flex flex-col items-start gap-1"><span class="stock-badge ${estado.color === 'text-emerald-700' ? 'bg-emerald-100 text-emerald-700' : estado.color === 'text-amber-700' ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'}">${estado.estado}</span><span class="text-xs ${isActive ? "text-emerald-700" : "text-slate-500"}">${isActive ? "Activo" : "Inactivo"}</span></div></td><td class="px-3 py-2"><div class="flex items-center justify-center gap-1"><button type="button" aria-label="Editar ${escapeHtml(p.nombre)}" title="Editar producto" onclick="showEditProductModal('${escapeHtml(p.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900">✏️</button><button type="button" aria-label="${isActive ? "Desactivar" : "Activar"} ${escapeHtml(p.nombre)}" title="${isActive ? "Desactivar producto" : "Activar producto"}" onclick="setProductActive('${escapeHtml(p.id)}', ${!isActive})" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm ${isActive ? "text-teal-700 hover:bg-teal-50" : "text-emerald-700 hover:bg-emerald-50"}">⏻</button><button type="button" aria-label="Eliminar ${escapeHtml(p.nombre)}" title="Eliminar producto" onclick="eliminarProducto('${escapeHtml(p.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-red-700 hover:bg-red-50">🗑️</button></div></td></tr>`;
       }).join("");
-      return `<div class="view-card"><div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4"><div><h3 class="text-lg font-bold">📦 Catálogo de productos</h3><p class="text-sm text-slate-500">Alta y edición de productos</p></div><button type="button" onclick="showEditProductModal()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ Nuevo producto</button></div><div class="overflow-x-auto rounded-xl border bg-white"><table class="w-full min-w-[900px] table-fixed text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="w-[24%] px-3 py-2 text-left">Producto</th><th class="w-[14%] px-3 py-2 text-left">Marca</th><th class="w-[14%] px-3 py-2 text-right">P. Venta</th><th class="w-[14%] px-3 py-2 text-right">P. Compra</th><th class="w-[8%] px-3 py-2 text-right">Stock</th><th class="w-[12%] px-3 py-2 text-left">Estado</th><th class="w-[14%] px-3 py-2 text-center">Acción</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
+      return `<div class="view-card"><div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between mb-4"><div><h3 class="text-lg font-bold">📦 Catálogo de productos</h3><p class="text-sm text-slate-500">Alta y edición de productos</p></div><button type="button" onclick="showEditProductModal()" class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white">+ Nuevo producto</button></div><div class="overflow-x-auto rounded-xl border bg-white"><table class="w-full min-w-[1100px] table-fixed text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="w-[20%] px-3 py-2 text-left">Producto</th><th class="w-[16%] px-3 py-2 text-left">Código de barras</th><th class="w-[12%] px-3 py-2 text-left">Marca</th><th class="w-[13%] px-3 py-2 text-right">P. Venta</th><th class="w-[13%] px-3 py-2 text-right">P. Compra</th><th class="w-[7%] px-3 py-2 text-right">Stock</th><th class="w-[10%] px-3 py-2 text-left">Estado</th><th class="w-[9%] px-3 py-2 text-center">Acción</th></tr></thead><tbody>${rows}</tbody></table></div></div>`;
     }
 
     function renderProveedores(st, search = "") {
@@ -849,6 +872,10 @@
               <label class="block text-sm font-semibold mb-1">Marca</label>
               <input type="text" id="productBrand" value="${product?.marca || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" required />
             </div>
+            <div>
+              <label for="productBarcode" class="block text-sm font-semibold mb-1">Código de barras (opcional)</label>
+              <input type="text" id="productBarcode" value="${escapeHtml(product?.codigoBarras || "")}" maxlength="100" autocomplete="off" spellcheck="false" placeholder="Escanea o escribe el código" class="w-full px-3 py-2 border rounded-lg text-sm font-mono" />
+            </div>
           </div>
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -925,6 +952,7 @@
         const name = document.getElementById("productName").value.trim();
         const category = document.getElementById("productCategory").value;
         const brand = document.getElementById("productBrand").value.trim();
+        const codigoBarras = document.getElementById("productBarcode").value.trim();
         const priceBuy = Number(document.getElementById("productPriceBuy").value);
         const priceSell = Number(document.getElementById("productPriceSell").value);
         const wholesalePriceInput = document.getElementById("productPriceWholesale").value.trim();
@@ -960,12 +988,20 @@
           return;
         }
 
+        const normalizedBarcode = codigoBarras.toLocaleLowerCase();
+        const duplicateBarcode = normalizedBarcode && db.products.some(entry => entry.id !== product?.id && String(entry.codigoBarras || "").trim().toLocaleLowerCase() === normalizedBarcode);
+        if (duplicateBarcode) {
+          showToast("Ese código de barras ya está asignado a otro producto", "warning");
+          return;
+        }
+
         if (isNew) {
           db.products.push({
             id: uid("prod"),
             nombre: name,
             categoria: category,
             marca: brand,
+            codigoBarras: codigoBarras || null,
             proveedor: providerId,
             imagen: image,
             precioCompra: priceBuy,
@@ -982,6 +1018,7 @@
           product.nombre = name;
           product.categoria = category;
           product.marca = brand;
+          product.codigoBarras = codigoBarras || null;
           product.proveedor = providerId;
           product.imagen = image;
           product.precioCompra = priceBuy;
@@ -1103,6 +1140,7 @@
       if (!["productos", "servicios", "mayorista"].includes(tab)) return;
       appState.posTab = tab;
       renderView();
+      if (tab !== "servicios") focusBarcodeScanner();
     }
 
     function setHistoryMode(mode) {
@@ -1384,9 +1422,11 @@
         ? `No hay productos para ${activeFilters.join(" y ")}.`
         : "No hay productos disponibles con ese criterio.";
       const serviceOptions = (st.services || []).filter(service => service.activo !== false && service.nombre.toLowerCase().includes(criteria)).map(service => `<option value="${escapeHtml(service.id)}" data-price="${service.precioSugerido ?? ""}" data-cost="${service.costoSugerido ?? ""}" ${service.id === appState.selectedPosServiceId ? "selected" : ""}>${escapeHtml(service.nombre)}${service.precioSugerido == null ? " · Precio variable" : ` · ${formatCurrency(service.precioSugerido)}`}</option>`).join("");
+      const barcodeScanner = appState.posTab === "servicios" ? "" : `<div class="view-card mb-4"><label for="barcodeScannerInput" class="mb-1 block text-sm font-semibold">Escanear producto</label><div class="flex gap-2"><input id="barcodeScannerInput" type="text" inputmode="none" autocomplete="off" spellcheck="false" placeholder="Escanea el código de barras y presiona Enter" onkeydown="handleBarcodeScanner(event)" class="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm font-mono" /><button type="button" onclick="procesarCodigoBarras()" class="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white">Agregar</button></div><p class="mt-1 text-xs text-slate-500">El escáner debe enviar Enter al terminar la lectura.</p></div>`;
       const tabs = `<div role="tablist" aria-label="Tipo de venta" class="flex border-b mb-4"><button type="button" role="tab" aria-selected="${appState.posTab === "productos"}" onclick="setPosTab('productos')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "productos" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Productos</button><button type="button" role="tab" aria-selected="${appState.posTab === "servicios"}" onclick="setPosTab('servicios')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "servicios" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Servicios</button><button type="button" role="tab" aria-selected="${appState.posTab === "mayorista"}" onclick="setPosTab('mayorista')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "mayorista" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Por mayor</button></div>`;
 
       return `
+        ${barcodeScanner}
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <div class="xl:col-span-2"><div class="view-card">${tabs}${appState.posTab === "servicios" ? `<div class="flex flex-wrap justify-between items-center gap-3 mb-4"><div><h3 class="text-lg font-bold">Agregar servicio</h3><p class="text-sm text-slate-500">Elige un procedimiento y registra su valor acordado.</p></div><button type="button" onclick="cambiarRuta('servicios')" class="text-sm font-semibold text-teal-700">Administrar cat&aacute;logo</button></div>${serviceOptions ? `<div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div class="md:col-span-2"><label for="posServiceSelect" class="block text-xs font-semibold text-slate-500 mb-1">Procedimiento</label><select id="posServiceSelect" onchange="onPosServiceSelected(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Selecciona un servicio</option>${serviceOptions}</select></div><div><label for="posServicePrice" class="block text-xs font-semibold text-slate-500 mb-1">Valor del servicio</label><input id="posServicePrice" type="number" min="0.01" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.precioSugerido ?? ""}" placeholder="Ingresa el valor acordado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div><label for="posServiceCost" class="block text-xs font-semibold text-slate-500 mb-1">Costo directo (opcional)</label><input id="posServiceCost" type="number" min="0" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.costoSugerido ?? ""}" placeholder="Costo de insumos" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><label for="posServiceNotes" class="block text-xs font-semibold text-slate-500 mb-1">Observaciones del procedimiento (opcional)</label><input id="posServiceNotes" type="text" maxlength="500" placeholder="Ej.: cabello largo, tono aplicado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><button type="button" onclick="addSelectedServiceToCart()" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Agregar servicio al carrito</button></div></div>` : '<p class="text-sm text-slate-500">No hay servicios disponibles con ese criterio.</p>'}` : `<div class="flex flex-col gap-3 mb-3"><h3 class="text-lg font-bold">🛍️ Productos disponibles</h3><div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div><label for="posBrandFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por marca</label><select id="posBrandFilter" onchange="setPosBrandFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${brandOptions}</select></div><div><label for="posCategoryFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por categoría</label><select id="posCategoryFilter" onchange="setPosCategoryFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${categoryOptions}</select></div></div></div><div class="grid grid-cols-2 md:grid-cols-3 gap-3">${cards || `<div class="col-span-2 md:col-span-3 rounded-lg border border-dashed p-4 text-sm text-slate-500 text-center">${emptyMessage}</div>`}</div>`}</div></div>
           <div><div class="view-card sticky top-4"><h3 class="text-lg font-bold mb-3">🛒 Carrito</h3><div class="bg-slate-50 rounded-lg p-3 mb-3 max-h-64 overflow-y-auto space-y-2">${cartItems}</div><div class="bg-blue-50 p-3 rounded-lg space-y-1 mb-3 text-sm"><div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(cartTotal)}</span></div><div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">Total:</span><span class="font-bold text-lg text-slate-900">${formatCurrency(cartTotal)}</span></div></div><button onclick="procesarVenta()" class="w-full rounded-lg bg-slate-900 text-white px-4 py-3 font-semibold" ${appState.cart.length === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>Procesar venta</button></div></div>
@@ -1511,10 +1551,12 @@
       revisarCumpleanos();
       const allRoutes = flatRoutes();
       const route = allRoutes.find(r => r.id === appState.currentRoute) || allRoutes[0];
+      const restoreBarcodeFocus = document.activeElement?.id === "barcodeScannerInput";
       document.getElementById("viewTitle").textContent = route.title;
       document.getElementById("appView").innerHTML = route.render(db, appState.searchTerm);
       renderSidebar();
       updateCartBadge();
+      if (restoreBarcodeFocus && route.id === "pos" && appState.posTab !== "servicios") focusBarcodeScanner();
     }
 
     function renderSidebar() {
@@ -1533,6 +1575,7 @@
     function cambiarRuta(rutaId) {
       appState.currentRoute = rutaId;
       renderView();
+      if (rutaId === "pos" && appState.posTab !== "servicios") focusBarcodeScanner();
     }
 
     function setPosBrandFilter(brand) {
@@ -1600,6 +1643,53 @@
       
       showToast(`${cantidad}x ${nombre} agregado al carrito`, "success");
       input.value = 1; // Reset a 1 para la próxima compra
+      updateCartBadge();
+      renderView();
+    }
+
+    function focusBarcodeScanner() {
+      document.getElementById("barcodeScannerInput")?.focus?.({ preventScroll: true });
+    }
+
+    function handleBarcodeScanner(event) {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      procesarCodigoBarras();
+    }
+
+    function procesarCodigoBarras(rawCode) {
+      const input = document.getElementById("barcodeScannerInput");
+      const code = String(rawCode ?? input?.value ?? "").trim();
+      if (input) input.value = "";
+      if (!code) return;
+
+      const normalizedCode = code.toLocaleLowerCase();
+      const product = db.products.find(entry => entry.activo !== false && String(entry.codigoBarras || "").trim().toLocaleLowerCase() === normalizedCode);
+      if (!product) {
+        showToast(`No hay un producto activo con el código ${code}`, "warning");
+        focusBarcodeScanner();
+        return;
+      }
+
+      const tipoPrecio = getPosPriceMode();
+      const precio = Number(getProductSalePrice(product, tipoPrecio));
+      if (!Number.isFinite(precio) || precio <= 0) {
+        showToast("Este producto no tiene precio para la modalidad seleccionada", "warning");
+        focusBarcodeScanner();
+        return;
+      }
+
+      const existing = appState.cart.find(item => item.productId === product.id && (item.tipoPrecio || "detal") === tipoPrecio);
+      const cantidadActual = existing?.cantidad || 0;
+      if (Number(product.stockActual) <= cantidadActual) {
+        showToast(`Stock insuficiente para ${product.nombre}`, "warning");
+        focusBarcodeScanner();
+        return;
+      }
+
+      if (existing) existing.cantidad += 1;
+      else appState.cart.push({ productId: product.id, nombre: product.nombre, precio, cantidad: 1, tipoPrecio });
+      showToast(`${product.nombre} agregado al carrito`, "success");
       updateCartBadge();
       renderView();
     }
@@ -1755,17 +1845,51 @@
         const description = item.tipo === "servicio" ? `${escapeHtml(item.nombre)}${item.observaciones ? `<p class="text-xs text-slate-500 break-words">${escapeHtml(item.observaciones)}</p>` : ""}` : escapeHtml(product?.nombre || "Producto");
         return `<tr class="border-b text-sm"><td class="px-2 py-1 break-words">${description}</td><td class="px-2 py-1 text-right">${item.cantidad}</td><td class="px-2 py-1 text-right">${formatCurrency(item.precio)}</td><td class="px-2 py-1 text-right">${formatCurrency(item.cantidad * item.precio)}</td></tr>`;
       }).join("");
+      const receiptItemsHtml = sale.items.map(item => {
+        const product = db.products.find(entry => entry.id === item.productId);
+        const description = item.tipo === "servicio" ? item.nombre : product?.nombre || "Producto";
+        const notes = item.tipo === "servicio" && item.observaciones ? `<p class="receipt-small">${escapeHtml(item.observaciones)}</p>` : "";
+        return `<article class="receipt-line"><p class="receipt-item-name">${escapeHtml(description)}</p>${notes}<div class="receipt-detail"><span>${item.cantidad} x ${formatCurrency(item.precio)}</span><strong class="receipt-amount">${formatCurrency(item.cantidad * item.precio)}</strong></div></article>`;
+      }).join("");
+      const receiptCustomer = customer ? `${escapeHtml(customer.nombre)}${customer.documento ? `<br><span class="receipt-small">Doc: ${escapeHtml(customer.documento)}</span>` : ""}` : "Consumidor final";
+      const receiptHtml = `
+        <section id="thermalReceipt" aria-hidden="true">
+          <header class="receipt-center">
+            <img class="receipt-logo" src="Logo_AndreCG_thermal.png" alt="Logo ANDRE CG Mujer Mágica" />
+            <p class="receipt-title">ANDRE CG</p>
+            <p>Mujer Mágica - Tienda de belleza</p>
+            <p class="receipt-address">Dir: Centro comercial Feria de los Plátanos, local 3 - Armenia<br>Tel: 3175769914</p>
+            <p class="receipt-small">RECIBO DE VENTA</p>
+          </header>
+          <div class="receipt-separator"></div>
+          <p><strong>Ticket:</strong> ${escapeHtml(sale.id)}</p>
+          <p><strong>Fecha:</strong> ${escapeHtml(formatDate(sale.fecha))}</p>
+          <p><strong>Cliente:</strong> ${receiptCustomer}</p>
+          <p><strong>Pago:</strong> ${escapeHtml(sale.metodoPago || "No especificado")}</p>
+          <div class="receipt-separator"></div>
+          ${receiptItemsHtml}
+          <div class="receipt-separator"></div>
+          <div class="receipt-detail"><span>Subtotal</span><span class="receipt-amount">${formatCurrency(sale.subtotal)}</span></div>
+          <div class="receipt-detail"><span>IVA</span><span class="receipt-amount">${formatCurrency(sale.iva || 0)}</span></div>
+          <div class="receipt-separator"></div>
+          <div class="receipt-detail receipt-total"><span>TOTAL</span><span class="receipt-amount">${formatCurrency(sale.total)}</span></div>
+          <div class="receipt-separator"></div>
+          <p class="receipt-center receipt-small">Gracias por tu compra</p>
+        </section>
+      `;
 
       const div = document.createElement("div");
       div.className = "modal-content";
       div.innerHTML = `
-        <div class="modal-header">
+        <div id="modalHeader" class="modal-header">
           <h3 class="text-lg font-bold">FACTURA ELECTRÓNICA</h3>
         </div>
         <div class="modal-body">
           <div class="text-center mb-3 pb-3 border-b-2 border-dashed">
-            <p class="text-sm text-slate-600">Mujer Magica - Belleza</p>
-            <p class="text-xs text-slate-500">NIT: 900.123.456-7</p>
+            <img src="Logo_AndreCG.jpg" alt="Logo ANDRE CG Mujer Mágica" class="mx-auto mb-2 h-28 w-28 object-contain" />
+            <p class="text-sm font-bold text-slate-800">ANDRE CG Mujer Mágica - Tienda de belleza</p>
+            <p class="mt-1 text-xs text-slate-600">Dir: Centro comercial Feria de los Plátanos, local 3 - Armenia</p>
+            <p class="text-xs text-slate-600">Tel: 3175769914</p>
           </div>
 
           <div class="grid grid-cols-2 gap-3 mb-3 text-sm">
@@ -1788,6 +1912,7 @@
 
           <div class="bg-slate-50 p-2 rounded-lg text-sm space-y-1 border-2 border-slate-900">
             <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(sale.subtotal)}</span></div>
+            <div class="flex justify-between"><span>IVA:</span><span class="font-semibold">${formatCurrency(sale.iva || 0)}</span></div>
             <div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">TOTAL:</span><span class="font-bold">${formatCurrency(sale.total)}</span></div>
           </div>
         </div>
@@ -1800,14 +1925,17 @@
       document.getElementById("modalContent").innerHTML = "";
       document.getElementById("modalContent").appendChild(div);
       document.getElementById("modalBackdrop").classList.add("active");
+      document.getElementById("thermalPrintRoot").innerHTML = receiptHtml;
     }
 
     function imprimirFactura() {
+      if (!document.getElementById("thermalReceipt")) return;
       window.print();
     }
 
     function cerrarModal() {
       document.getElementById("modalBackdrop").classList.remove("active");
+      document.getElementById("thermalPrintRoot").innerHTML = "";
       renderView();
     }
 
@@ -1922,6 +2050,7 @@
 
       restoreSidebarState();
       renderView();
+      if (appState.currentRoute === "pos" && appState.posTab !== "servicios") focusBarcodeScanner();
       startClock();
       calcularAlertas();
       startBirthdayChecks();

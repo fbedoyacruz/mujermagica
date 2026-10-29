@@ -37,6 +37,16 @@ async function ensureSchema() {
       await conn.query("ALTER TABLE products ADD COLUMN activo BOOLEAN NOT NULL DEFAULT TRUE");
     }
 
+    const [barcodeColumn] = await conn.query("SHOW COLUMNS FROM products LIKE 'codigo_barras'");
+    if (barcodeColumn.length === 0) {
+      await conn.query("ALTER TABLE products ADD COLUMN codigo_barras VARCHAR(100) NULL");
+    }
+
+    const [barcodeIndex] = await conn.query("SHOW INDEX FROM products WHERE Key_name = 'uq_products_codigo_barras'");
+    if (barcodeIndex.length === 0) {
+      await conn.query("ALTER TABLE products ADD UNIQUE KEY uq_products_codigo_barras (codigo_barras)");
+    }
+
     const [stockDeductedColumn] = await conn.query("SHOW COLUMNS FROM sale_items LIKE 'stock_descontado'");
     if (stockDeductedColumn.length === 0) {
       await conn.query("ALTER TABLE sale_items ADD COLUMN stock_descontado BOOLEAN NOT NULL DEFAULT TRUE");

@@ -5,7 +5,7 @@ async function getState() {
   const [providers] = await pool.query("SELECT id, nombre, contacto, telefono, email, activo FROM providers");
   const [customers] = await pool.query("SELECT id, nombre, documento, telefono, correo, DATE_FORMAT(fecha_nacimiento, '%Y-%m-%d') AS fechaNacimiento FROM customers");
   const [products] = await pool.query(
-    "SELECT id, nombre, categoria, marca, precio_venta_detal AS precioVentaDetal, precio_venta_mayorista AS precioVentaMayorista, precio_compra AS precioCompra, stock_actual AS stockActual, stock_minimo AS stockMinimo, proveedor_id AS proveedor, imagen, activo FROM products"
+    "SELECT id, nombre, categoria, marca, precio_venta_detal AS precioVentaDetal, precio_venta_mayorista AS precioVentaMayorista, precio_compra AS precioCompra, stock_actual AS stockActual, stock_minimo AS stockMinimo, proveedor_id AS proveedor, imagen, activo, codigo_barras AS codigoBarras FROM products"
   );
   const [sales] = await pool.query(
     "SELECT id, fecha, cliente_id AS clienteId, subtotal, iva, total, metodo_pago AS metodoPago FROM sales ORDER BY fecha"
@@ -112,8 +112,8 @@ async function replaceState(state) {
 
     for (const p of state.products || []) {
       await conn.query(
-        "INSERT INTO products (id, nombre, categoria, marca, precio_venta_detal, precio_venta_mayorista, precio_compra, stock_actual, stock_minimo, proveedor_id, imagen, activo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        [p.id, p.nombre, p.categoria || null, p.marca || null, p.precioVentaDetal || 0, p.precioVentaMayorista ?? null, p.precioCompra || 0, p.stockActual || 0, p.stockMinimo || 0, p.proveedor || null, p.imagen || null, p.activo !== false]
+        "INSERT INTO products (id, nombre, categoria, marca, precio_venta_detal, precio_venta_mayorista, precio_compra, stock_actual, stock_minimo, proveedor_id, imagen, activo, codigo_barras) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        [p.id, p.nombre, p.categoria || null, p.marca || null, p.precioVentaDetal || 0, p.precioVentaMayorista ?? null, p.precioCompra || 0, p.stockActual || 0, p.stockMinimo || 0, p.proveedor || null, p.imagen || null, p.activo !== false, p.codigoBarras?.trim() || null]
       );
     }
 
