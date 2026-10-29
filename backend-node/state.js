@@ -3,7 +3,7 @@ const pool = require("./db");
 // Convierte las filas de MySQL al mismo shape (camelCase) que usa sistema-completo.html
 async function getState() {
   const [providers] = await pool.query("SELECT id, nombre, contacto, telefono, email, activo FROM providers");
-  const [customers] = await pool.query("SELECT id, nombre, documento, telefono, correo FROM customers");
+  const [customers] = await pool.query("SELECT id, nombre, documento, telefono, correo, DATE_FORMAT(fecha_nacimiento, '%Y-%m-%d') AS fechaNacimiento FROM customers");
   const [products] = await pool.query(
     "SELECT id, nombre, categoria, marca, precio_venta_detal AS precioVentaDetal, precio_venta_mayorista AS precioVentaMayorista, precio_compra AS precioCompra, stock_actual AS stockActual, stock_minimo AS stockMinimo, proveedor_id AS proveedor, imagen, activo FROM products"
   );
@@ -105,8 +105,8 @@ async function replaceState(state) {
     }
 
     for (const c of state.customers || []) {
-      await conn.query("INSERT INTO customers (id, nombre, documento, telefono, correo) VALUES (?, ?, ?, ?, ?)", [
-        c.id, c.nombre, c.documento || null, c.telefono || null, c.correo || null
+      await conn.query("INSERT INTO customers (id, nombre, documento, telefono, correo, fecha_nacimiento) VALUES (?, ?, ?, ?, ?, ?)", [
+        c.id, c.nombre, c.documento || null, c.telefono || null, c.correo || null, c.fechaNacimiento || null
       ]);
     }
 

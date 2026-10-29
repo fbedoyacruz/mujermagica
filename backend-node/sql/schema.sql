@@ -16,7 +16,8 @@ CREATE TABLE IF NOT EXISTS customers (
   nombre VARCHAR(150) NOT NULL,
   documento VARCHAR(50),
   telefono VARCHAR(50),
-  correo VARCHAR(150)
+  correo VARCHAR(150),
+  fecha_nacimiento DATE NULL
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS products (

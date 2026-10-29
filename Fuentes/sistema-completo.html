@@ -80,6 +80,7 @@
             <div class="cart-alerts-top">
               <button id="cartBtn" class="rounded-2xl bg-orange-600 text-white px-3 py-2 text-xs font-semibold flex items-center justify-center gap-2 whitespace-nowrap">🛒 <span class="cart-badge">0</span></button>
               <button id="alertBtn" class="rounded-2xl bg-red-600 text-white px-3 py-2 text-xs font-semibold flex items-center justify-center gap-2 whitespace-nowrap">⚠️ <span class="alert-count">0</span></button>
+              <button id="birthdayBtn" type="button" title="Cumpleaños próximos" aria-label="Cumpleaños próximos" class="rounded-2xl bg-teal-700 text-white px-3 py-2 text-xs font-semibold flex items-center justify-center gap-2 whitespace-nowrap"><span aria-hidden="true">&#128276;</span><span id="birthdayCount" aria-live="polite">0</span></button>
               <div class="rounded-2xl bg-slate-900 text-white px-3 py-2 text-xs font-semibold text-center whitespace-nowrap">
                 <p id="liveClock">--:--:--</p>
               </div>
@@ -294,10 +295,88 @@
       historyDate: getLocalDateInputValue(new Date()),
       carteraCustomerId: "",
       periodo: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`,
-      activeAlerts: 0
+      activeAlerts: 0,
+      birthdayCheckDate: "",
+      birthdayAlerts: []
     };
 
     // ==================== FUNCIONES DE LÓGICA ====================
+    function parseBirthDate(value) {
+      if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+      const date = new Date(`${value}T12:00:00`);
+      return getLocalDateInputValue(date) === value ? date : null;
+    }
+
+    function getUpcomingBirthdays(customers, now = new Date()) {
+      const todayKey = getLocalDateInputValue(now);
+      const todayNumber = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+      return customers.flatMap(customer => {
+        const birthDate = parseBirthDate(customer.fechaNacimiento);
+        if (!birthDate || customer.fechaNacimiento > todayKey) return [];
+        const anniversary = year => new Date(year, birthDate.getMonth(), Math.min(birthDate.getDate(), new Date(year, birthDate.getMonth() + 1, 0).getDate()));
+        let nextBirthday = anniversary(now.getFullYear());
+        let birthdayNumber = Date.UTC(nextBirthday.getFullYear(), nextBirthday.getMonth(), nextBirthday.getDate());
+        if (birthdayNumber < todayNumber) {
+          nextBirthday = anniversary(now.getFullYear() + 1);
+          birthdayNumber = Date.UTC(nextBirthday.getFullYear(), nextBirthday.getMonth(), nextBirthday.getDate());
+        }
+        const daysUntil = (birthdayNumber - todayNumber) / 86400000;
+        return daysUntil <= 7 ? [{ customerId: customer.id, nombre: customer.nombre, fecha: getLocalDateInputValue(nextBirthday), daysUntil }] : [];
+      }).sort((first, second) => first.daysUntil - second.daysUntil || first.nombre.localeCompare(second.nombre));
+    }
+
+    function revisarCumpleanos(now = new Date(), force = false) {
+      const dateKey = getLocalDateInputValue(now);
+      if (!force && appState.birthdayCheckDate === dateKey) return false;
+      appState.birthdayAlerts = getUpcomingBirthdays(db.customers, now);
+      appState.birthdayCheckDate = dateKey;
+      const count = document.getElementById("birthdayCount");
+      if (count) count.textContent = appState.birthdayAlerts.length;
+      const button = document.getElementById("birthdayBtn");
+      if (button) button.setAttribute("aria-label", `Cumpleaños próximos: ${appState.birthdayAlerts.length}`);
+      if (appState.birthdayAlerts.length) {
+        try {
+          const storageKey = "mujermagicaBirthdayNoticeDate";
+          if (localStorage.getItem(storageKey) !== dateKey) {
+            localStorage.setItem(storageKey, dateKey);
+            showToast(`Cumpleaños próximos: ${appState.birthdayAlerts.length} clientes`, "info");
+          }
+        } catch (error) {
+          console.warn("No se pudo registrar el aviso diario de cumpleaños", error);
+        }
+      }
+      return true;
+    }
+
+    function startBirthdayChecks() {
+      const check = () => {
+        if (revisarCumpleanos()) renderView();
+      };
+      check();
+      setInterval(check, 60000);
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) check();
+      });
+    }
+
+    function renderBirthdayAlerts() {
+      return appState.birthdayAlerts.map(alert => `<button type="button" onclick="openBirthdayCustomer('${escapeHtml(alert.customerId)}')" class="w-full flex items-center justify-between gap-3 border-b px-3 py-3 text-left hover:bg-teal-50"><span class="min-w-0 break-words font-semibold">${escapeHtml(alert.nombre)}</span><span class="shrink-0 text-right text-sm text-teal-800">${alert.fecha.split("-").reverse().join("/")}<br>${alert.daysUntil === 0 ? "Hoy" : `En ${alert.daysUntil} ${alert.daysUntil === 1 ? "día" : "días"}`}</span></button>`).join("") || '<p class="py-6 text-center text-sm text-slate-500">Sin cumpleaños próximos</p>';
+    }
+
+    function showBirthdayAlertsModal() {
+      revisarCumpleanos();
+      document.getElementById("modalContent").innerHTML = `<div class="modal-content"><div class="modal-header flex items-center justify-between gap-3"><h3 class="text-lg font-bold">Cumpleaños próximos</h3><button type="button" onclick="cerrarModal()" title="Cerrar" aria-label="Cerrar" class="h-8 w-8 shrink-0 rounded-md hover:bg-slate-100">&times;</button></div><div class="modal-body">${renderBirthdayAlerts()}</div></div>`;
+      document.getElementById("modalBackdrop").classList.add("active");
+    }
+
+    function openBirthdayCustomer(customerId) {
+      if (!db.customers.some(customer => customer.id === customerId)) return;
+      appState.searchTerm = "";
+      document.getElementById("globalSearch").value = "";
+      cambiarRuta("clientes");
+      showEditCustomerModal(customerId);
+    }
+
     function calcularAlertas() {
       db.alerts = [];
       db.products.forEach(p => {
@@ -623,6 +702,10 @@
                 <input type="email" id="customerEmail" value="${customer?.correo || ""}" class="w-full px-3 py-2 border rounded-lg text-sm" />
               </div>
             </div>
+            <div>
+              <label for="customerBirthDate" class="block text-sm font-semibold mb-1">Fecha de nacimiento (opcional)</label>
+              <input type="date" id="customerBirthDate" value="${escapeHtml(customer?.fechaNacimiento || "")}" max="${getLocalDateInputValue(new Date())}" class="w-full px-3 py-2 border rounded-lg text-sm" />
+            </div>
           </form>
         </div>
         <div class="modal-footer">
@@ -635,30 +718,35 @@
       document.getElementById("modalBackdrop").classList.add("active");
 
       document.getElementById("btnCancelCustomer").addEventListener("click", cerrarModal);
-      document.getElementById("customerForm").addEventListener("submit", e => {
+      document.getElementById("customerForm").addEventListener("submit", async e => {
         e.preventDefault();
         const nombre = document.getElementById("customerName").value.trim();
         const documento = document.getElementById("customerDoc").value.trim();
         const telefono = document.getElementById("customerPhone").value.trim();
         const correo = document.getElementById("customerEmail").value.trim();
+        const fechaNacimiento = document.getElementById("customerBirthDate").value || null;
         if (!nombre || !documento) {
           showToast("Completa nombre y documento", "warning");
           return;
         }
-
-        if (isNew) {
-          db.customers.push({ id: uid("cli"), nombre, documento, telefono, correo });
-          showToast("Cliente creado", "success");
-          saveDB();
-        } else {
-          customer.nombre = nombre;
-          customer.documento = documento;
-          customer.telefono = telefono;
-          customer.correo = correo;
-          showToast("Cliente actualizado", "success");
-          saveDB();
+        if (fechaNacimiento && (!parseBirthDate(fechaNacimiento) || fechaNacimiento > getLocalDateInputValue(new Date()))) {
+          showToast("Ingresa una fecha de nacimiento válida que no sea futura", "warning");
+          return;
         }
 
+        const previousCustomers = JSON.parse(JSON.stringify(db.customers));
+        if (isNew) {
+          db.customers.push({ id: uid("cli"), nombre, documento, telefono, correo, fechaNacimiento });
+        } else {
+          Object.assign(db.customers.find(entry => entry.id === customerId), { nombre, documento, telefono, correo, fechaNacimiento });
+        }
+
+        if (!await saveDB()) {
+          db.customers = previousCustomers;
+          return;
+        }
+        revisarCumpleanos(new Date(), true);
+        showToast(isNew ? "Cliente creado" : "Cliente actualizado", "success");
         cerrarModal();
         renderView();
       });
@@ -670,12 +758,14 @@
       const rows = filtered.map(c => {
         const ventas = st.sales.filter(s => s.clienteId === c.id).length;
         const totalComprado = st.sales.filter(s => s.clienteId === c.id).reduce((sum, s) => sum + s.total, 0);
+        const birthday = appState.birthdayAlerts.find(alert => alert.customerId === c.id);
         return `
           <tr class="border-b text-sm hover:bg-slate-50">
-            <td class="px-3 py-2 font-semibold">${c.nombre}</td>
+            <td class="px-3 py-2 font-semibold">${escapeHtml(c.nombre)}${birthday ? `<button type="button" title="Abrir cliente por cumpleaños" aria-label="Cumpleaños de ${escapeHtml(c.nombre)}" onclick="openBirthdayCustomer('${escapeHtml(c.id)}')" class="ml-2 inline-flex items-center gap-1 text-xs text-teal-800"><span aria-hidden="true">&#128276;</span>${birthday.daysUntil === 0 ? "Hoy" : `En ${birthday.daysUntil} días`}</button>` : ""}</td>
             <td class="px-3 py-2">${c.documento}</td>
             <td class="px-3 py-2">${c.telefono || "---"}</td>
             <td class="px-3 py-2">${c.correo || "---"}</td>
+            <td class="px-3 py-2 whitespace-nowrap">${parseBirthDate(c.fechaNacimiento) ? c.fechaNacimiento.split("-").reverse().join("/") : "---"}</td>
             <td class="px-3 py-2 text-right">${ventas}</td>
             <td class="px-3 py-2 text-right">${formatCurrency(totalComprado)}</td>
             <td class="px-3 py-2"><div class="flex items-center justify-center gap-1"><button type="button" aria-label="Editar ${escapeHtml(c.nombre)}" title="Editar cliente" onclick="showEditCustomerModal('${escapeHtml(c.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900">✏️</button><button type="button" aria-label="Eliminar ${escapeHtml(c.nombre)}" title="Eliminar cliente" onclick="eliminarCliente('${escapeHtml(c.id)}')" class="inline-flex h-8 w-8 items-center justify-center rounded-md text-sm text-red-700 hover:bg-red-50">🗑️</button></div></td>
@@ -697,9 +787,9 @@
           <div class="overflow-x-auto rounded-xl border bg-white">
             <table class="min-w-full text-sm">
               <thead class="bg-slate-50 text-xs uppercase border-b">
-                <tr><th class="px-3 py-2 text-left">Nombre</th><th class="px-3 py-2 text-left">Documento</th><th class="px-3 py-2 text-left">Teléfono</th><th class="px-3 py-2 text-left">Correo</th><th class="px-3 py-2 text-right">Ventas</th><th class="px-3 py-2 text-right">Total comprado</th><th class="px-3 py-2 text-center">Acción</th></tr>
+                <tr><th class="px-3 py-2 text-left">Nombre</th><th class="px-3 py-2 text-left">Documento</th><th class="px-3 py-2 text-left">Teléfono</th><th class="px-3 py-2 text-left">Correo</th><th class="px-3 py-2 text-left">Nacimiento</th><th class="px-3 py-2 text-right">Ventas</th><th class="px-3 py-2 text-right">Total comprado</th><th class="px-3 py-2 text-center">Acción</th></tr>
               </thead>
-              <tbody>${rows || '<tr><td colspan="7" class="px-3 py-4 text-center text-slate-500">Sin clientes</td></tr>'}</tbody>
+              <tbody>${rows || '<tr><td colspan="8" class="px-3 py-4 text-center text-slate-500">Sin clientes</td></tr>'}</tbody>
             </table>
           </div>
         </div>
@@ -722,6 +812,7 @@
         return;
       }
       showToast("Cliente eliminado", "success");
+      revisarCumpleanos(new Date(), true);
       renderView();
     }
 
@@ -1417,6 +1508,7 @@
     }
 
     function renderView() {
+      revisarCumpleanos();
       const allRoutes = flatRoutes();
       const route = allRoutes.find(r => r.id === appState.currentRoute) || allRoutes[0];
       document.getElementById("viewTitle").textContent = route.title;
@@ -1744,6 +1836,7 @@
       if (confirm("¿Estás seguro? Esto eliminará TODOS los cambios y volverá a los datos por defecto.")) {
         db = createDefaultDB();
         await saveDB();
+        revisarCumpleanos(new Date(), true);
         showToast("Base de datos restaurada a valores iniciales", "success");
         renderView();
       }
@@ -1777,6 +1870,8 @@
       appState.currentRoute = "dashboard";
       renderView();
     });
+
+    document.getElementById("birthdayBtn").addEventListener("click", showBirthdayAlertsModal);
 
     document.getElementById("modalBackdrop").addEventListener("click", (e) => {
       if (e.target === document.getElementById("modalBackdrop")) {
@@ -1829,6 +1924,7 @@
       renderView();
       startClock();
       calcularAlertas();
+      startBirthdayChecks();
     }
 
     iniciarApp();

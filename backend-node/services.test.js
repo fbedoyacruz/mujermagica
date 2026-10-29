@@ -20,7 +20,8 @@ function frontend(state = fixture(), elements = {}) {
   const context = vm.createContext({
     fixture: state, console, Intl, Date,
     confirm: () => true,
-    document: { getElementById: id => elements[id] || (id === "toastHost" ? null : ({ value: id === "metodoSelect" ? "Efectivo" : "" })) },
+    document: { getElementById: id => elements[id] || (id === "toastHost" ? null : ({ value: id === "metodoSelect" ? "Efectivo" : "", setAttribute: () => {} })) },
+    localStorage: { getItem: () => null, setItem: () => {} },
     setTimeout: () => {}, setInterval: () => {}
   });
   new vm.Script(script);
@@ -34,6 +35,106 @@ function backend(pool) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, "state.js"), "utf8"), context);
   return context.module.exports;
 }
+
+test("fecha de nacimiento persiste como fecha civil y admite clientes antiguos", async () => {
+  const inserts = [];
+  const conn = { query: async (sql, values) => { if (sql.startsWith("INSERT INTO customers ")) inserts.push(values); }, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} };
+  const store = backend({
+    getConnection: async () => conn,
+    query: async sql => {
+      if (sql.includes("FROM customers")) {
+        assert.match(sql, /DATE_FORMAT\(fecha_nacimiento, '%Y-%m-%d'\) AS fechaNacimiento/);
+        return [[{ id: "customer_1", nombre: "Ana", fechaNacimiento: "1990-12-31" }]];
+      }
+      return [[]];
+    }
+  });
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "Ana", fechaNacimiento: "1990-12-31" }, { id: "customer_2", nombre: "Luisa" }];
+  await store.replaceState(state);
+  assert.equal(inserts[0][5], "1990-12-31");
+  assert.equal(inserts[1][5], null);
+  assert.equal((await store.getState()).customers[0].fechaNacimiento, "1990-12-31");
+  assert.match(html, /id="customerBirthDate"/);
+});
+
+test("migración de nacimiento agrega la columna solo si falta", async () => {
+  for (const missing of [true, false]) {
+    const queries = [];
+    const conn = { query: async sql => { queries.push(sql); return sql.startsWith("SHOW COLUMNS") ? [missing ? [] : [{ Field: "existing" }]] : [[]]; }, release: () => {} };
+    const pool = { getConnection: async () => conn };
+    const context = vm.createContext({ require: name => name === "./db" ? pool : require(name), module: { exports: {} }, __dirname });
+    vm.runInContext(fs.readFileSync(path.join(__dirname, "schema.js"), "utf8"), context);
+    await context.module.exports();
+    assert.equal(queries.filter(sql => sql === "ALTER TABLE customers ADD COLUMN fecha_nacimiento DATE NULL").length, missing ? 1 : 0);
+  }
+});
+
+test("editar nacimiento revierte un fallo de guardado y permite reintentar", async () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "Ana", documento: "123", fechaNacimiento: null }];
+  const handlers = {};
+  const elements = {
+    modalContent: { appendChild: () => {} }, modalBackdrop: { classList: { add: () => {} } },
+    btnCancelCustomer: { addEventListener: () => {} }, customerForm: { addEventListener: (event, handler) => { handlers[event] = handler; } },
+    customerName: { value: "Ana" }, customerDoc: { value: "123" }, customerPhone: { value: "" }, customerEmail: { value: "" }, customerBirthDate: { value: "1990-05-10" }
+  };
+  const app = frontend(state, elements);
+  app.document.createElement = () => ({});
+  app.showEditCustomerModal("customer_1");
+  vm.runInContext("saveDB = async () => false;", app);
+  await handlers.submit({ preventDefault: () => {} });
+  assert.equal(vm.runInContext("db.customers[0].fechaNacimiento", app), null);
+  vm.runInContext("saveDB = async () => true;", app);
+  await handlers.submit({ preventDefault: () => {} });
+  assert.equal(vm.runInContext("db.customers[0].fechaNacimiento", app), "1990-05-10");
+  elements.customerBirthDate.value = "2999-05-10";
+  await handlers.submit({ preventDefault: () => {} });
+  assert.equal(vm.runInContext("db.customers[0].fechaNacimiento", app), "1990-05-10");
+});
+
+test("cumpleaños incluye hoy y siete días, cruza el año e ignora fechas inválidas", () => {
+  const app = frontend();
+  const customers = [
+    { id: "today", nombre: "Ana", fechaNacimiento: "1990-12-29" },
+    { id: "nextYear", nombre: "Luisa", fechaNacimiento: "1985-01-05" },
+    { id: "outside", nombre: "Fuera", fechaNacimiento: "1985-01-06" },
+    { id: "past", nombre: "Pasado", fechaNacimiento: "1985-12-28" },
+    { id: "empty", nombre: "Sin fecha" },
+    { id: "invalid", nombre: "Inválida", fechaNacimiento: "2000-02-30" },
+    { id: "future", nombre: "Futura", fechaNacimiento: "2027-01-01" }
+  ];
+  const alerts = app.getUpcomingBirthdays(customers, new Date(2026, 11, 29));
+  assert.deepEqual(Array.from(alerts, alert => [alert.customerId, alert.daysUntil]), [["today", 0], ["nextYear", 7]]);
+  assert.equal(alerts[1].fecha, "2027-01-05");
+  const leapCustomer = [{ id: "leap", nombre: "Bisiesto", fechaNacimiento: "2000-02-29" }];
+  assert.equal(app.getUpcomingBirthdays(leapCustomer, new Date(2027, 1, 28))[0].daysUntil, 0);
+  assert.equal(app.getUpcomingBirthdays(leapCustomer, new Date(2028, 1, 28))[0].daysUntil, 1);
+});
+
+test("cumpleaños se revisa una vez al día y no repite aviso al recargar", () => {
+  const state = fixture();
+  state.customers = [{ id: "birthday_1", nombre: "Ana", fechaNacimiento: "1990-12-31" }];
+  const badge = {};
+  const writes = [];
+  const storage = new Map();
+  const app = frontend(state, { birthdayCount: badge });
+  app.localStorage = { getItem: key => storage.get(key), setItem: (key, value) => { storage.set(key, value); writes.push(value); } };
+  assert.equal(app.revisarCumpleanos(new Date(2026, 11, 29)), true);
+  assert.equal(badge.textContent, 1);
+  assert.equal(app.revisarCumpleanos(new Date(2026, 11, 29)), false);
+  app.revisarCumpleanos(new Date(2026, 11, 29), true);
+  assert.equal(writes.length, 1);
+  const reloaded = frontend(state);
+  reloaded.localStorage = app.localStorage;
+  reloaded.revisarCumpleanos(new Date(2026, 11, 29));
+  assert.equal(writes.length, 1);
+  app.revisarCumpleanos(new Date(2026, 11, 30));
+  assert.equal(writes.length, 2);
+  assert.match(app.renderBirthdayAlerts(), /openBirthdayCustomer\('birthday_1'\)/);
+  assert.match(app.renderClientes(state), /31\/12\/1990/);
+  assert.match(app.renderClientes(state), /Cumpleaños de Ana/);
+});
 
 test("ventas mixtas separan ingresos y omiten ganancias de servicios sin costo", () => {
   const state = fixture();

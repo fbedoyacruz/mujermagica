@@ -17,6 +17,11 @@ async function ensureSchema() {
       await conn.query(statement);
     }
 
+    const [customerBirthDateColumn] = await conn.query("SHOW COLUMNS FROM customers LIKE 'fecha_nacimiento'");
+    if (customerBirthDateColumn.length === 0) {
+      await conn.query("ALTER TABLE customers ADD COLUMN fecha_nacimiento DATE NULL");
+    }
+
     const [providerActiveColumn] = await conn.query("SHOW COLUMNS FROM providers LIKE 'activo'");
     if (providerActiveColumn.length === 0) {
       await conn.query("ALTER TABLE providers ADD COLUMN activo BOOLEAN NOT NULL DEFAULT TRUE");
