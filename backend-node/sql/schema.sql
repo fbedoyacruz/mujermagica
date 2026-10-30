@@ -44,7 +44,12 @@ CREATE TABLE IF NOT EXISTS sales (
   subtotal DECIMAL(12,2) DEFAULT 0,
   iva DECIMAL(12,2) DEFAULT 0,
   total DECIMAL(12,2) DEFAULT 0,
-  metodo_pago VARCHAR(50)
+  metodo_pago VARCHAR(50),
+  comision_porcentaje DECIMAL(5,2) NULL,
+  comision_valor DECIMAL(12,2) NOT NULL DEFAULT 0,
+  neto_recibido DECIMAL(12,2) NULL,
+  comision_entidad_porcentaje DECIMAL(5,2) NULL,
+  comision_entidad_valor DECIMAL(12,2) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS customer_credits (

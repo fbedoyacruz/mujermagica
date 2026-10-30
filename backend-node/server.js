@@ -59,22 +59,22 @@ app.get("/api/state", async (req, res) => {
 
 app.put("/api/state", async (req, res) => {
   try {
-    await replaceState(req.body);
+    await replaceState(req.body, req.get("X-Sale-Delete-Code"));
     res.json({ ok: true });
   } catch (err) {
     console.error("Error guardando estado:", err);
-    res.status(500).json({ error: "No se pudo guardar la base de datos" });
+    res.status(err.status || 500).json({ error: err.status ? err.message : "No se pudo guardar la base de datos" });
   }
 });
 
 // Migración de un respaldo de localStorage (mismo shape que el estado)
 app.post("/api/migrate", async (req, res) => {
   try {
-    await replaceState(req.body);
+    await replaceState(req.body, req.get("X-Sale-Delete-Code"));
     res.json({ ok: true });
   } catch (err) {
     console.error("Error migrando datos:", err);
-    res.status(500).json({ error: "No se pudo migrar la base de datos" });
+    res.status(err.status || 500).json({ error: err.status ? err.message : "No se pudo migrar la base de datos" });
   }
 });
 

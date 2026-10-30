@@ -45,6 +45,25 @@ Al iniciar:
 
 Cada cambio (crear/editar producto, proveedor, cliente, confirmar venta, etc.) se sincroniza contra `PUT /api/state`, por lo que puedes verificar los datos directamente en MySQL Workbench sobre el esquema `mujermagicabd`.
 
+## Autorizacion para eliminar ventas
+
+- Configura `SALE_DELETE_AUTH_CODE` en el archivo `.env` del backend y reinicia
+   el servidor. Usa un codigo privado de letras y numeros (hasta 128 caracteres);
+   se recomienda uno aleatorio de al menos 12 caracteres. Distingue mayusculas
+   de minusculas. No compartas el codigo en el chat ni lo incluyas en Git.
+- No existe un codigo predeterminado: mientras no se configure, la API bloquea
+   las eliminaciones de ventas, pero permite los guardados normales.
+- En **Historial de ventas > Eliminar**, el modal solicita el codigo en un campo
+   oculto. Cancelar no modifica datos. Si la autorizacion falla, la venta y el
+   stock se conservan; el campo se limpia para reintentar.
+- El codigo se envia temporalmente en la cabecera `X-Sale-Delete-Code`; no se
+   incluye en snapshots, respaldos ni almacenamiento del navegador.
+- La API protege tanto `PUT /api/state` como `POST /api/migrate` si el nuevo
+   estado omite ventas existentes. Una importacion que quite ventas tambien
+   requiere esa cabecera; la importacion actual de la interfaz no la solicita.
+- Este mecanismo no sustituye un sistema de usuarios. Mantiene el backend en
+   un entorno local de confianza; para acceso remoto, usa HTTPS y autenticacion.
+
 ## Servicios personalizados
 
 Reinicia el backend con `npm start` y recarga el HTML al actualizar esta version.

@@ -1,4 +1,5 @@
 const pool = require("./db");
+const { createHash, timingSafeEqual } = require("node:crypto");
 
 // Convierte las filas de MySQL al mismo shape (camelCase) que usa sistema-completo.html
 async function getState() {
@@ -8,7 +9,7 @@ async function getState() {
     "SELECT id, nombre, categoria, marca, precio_venta_detal AS precioVentaDetal, precio_venta_mayorista AS precioVentaMayorista, precio_compra AS precioCompra, stock_actual AS stockActual, stock_minimo AS stockMinimo, proveedor_id AS proveedor, imagen, activo, codigo_barras AS codigoBarras FROM products"
   );
   const [sales] = await pool.query(
-    "SELECT id, fecha, cliente_id AS clienteId, subtotal, iva, total, metodo_pago AS metodoPago FROM sales ORDER BY fecha"
+    "SELECT id, fecha, cliente_id AS clienteId, subtotal, iva, total, metodo_pago AS metodoPago, comision_porcentaje AS comisionPorcentaje, comision_valor AS comisionValor, neto_recibido AS netoRecibido, comision_entidad_porcentaje AS comisionEntidadPorcentaje, comision_entidad_valor AS comisionEntidadValor FROM sales ORDER BY fecha"
   );
   const [customerCredits] = await pool.query(
     "SELECT id, sale_id AS saleId, customer_id AS customerId, monto, fecha FROM customer_credits ORDER BY fecha"
@@ -63,6 +64,11 @@ async function getState() {
       subtotal: Number(s.subtotal),
       iva: Number(s.iva),
       total: Number(s.total),
+      comisionPorcentaje: s.comisionPorcentaje == null ? null : Number(s.comisionPorcentaje),
+      comisionValor: Number(s.comisionValor || 0),
+      netoRecibido: s.netoRecibido == null ? Number(s.total) : Number(s.netoRecibido),
+      comisionEntidadPorcentaje: s.comisionEntidadPorcentaje == null ? (s.metodoPago === "QR" ? (s.comisionPorcentaje == null ? null : Number(s.comisionPorcentaje)) : null) : Number(s.comisionEntidadPorcentaje),
+      comisionEntidadValor: s.comisionEntidadValor == null ? (s.metodoPago === "QR" ? Number(s.comisionValor || 0) : 0) : Number(s.comisionEntidadValor),
       items: itemsBySale.get(s.id) || []
     })),
     customerCredits: customerCredits.map(credit => ({ ...credit, monto: Number(credit.monto) })),
@@ -79,10 +85,24 @@ async function getState() {
 }
 
 // Reemplaza todo el contenido de las tablas con el estado recibido (snapshot completo, igual que localStorage)
-async function replaceState(state) {
+async function replaceState(state, authorizationCode) {
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
+    const [existingSales] = await conn.query("SELECT id FROM sales FOR UPDATE");
+    const incomingSaleIds = new Set((state.sales || []).map(sale => sale.id));
+    if (existingSales.some(sale => !incomingSaleIds.has(sale.id))) {
+      const configuredCode = process.env.SALE_DELETE_AUTH_CODE;
+      if (typeof configuredCode !== "string" || !/^[A-Za-z0-9]{1,128}$/.test(configuredCode)) {
+        throw Object.assign(new Error("La eliminación de ventas no tiene un código de autorización configurado en el backend."), { status: 503 });
+      }
+      const validFormat = typeof authorizationCode === "string" && /^[A-Za-z0-9]{1,128}$/.test(authorizationCode);
+      const expectedHash = createHash("sha256").update(configuredCode).digest();
+      const suppliedHash = createHash("sha256").update(validFormat ? authorizationCode : "").digest();
+      if (!validFormat || !timingSafeEqual(expectedHash, suppliedHash)) {
+        throw Object.assign(new Error("Código de autorización incorrecto. No se eliminó la venta."), { status: 403 });
+      }
+    }
     await conn.query("SET FOREIGN_KEY_CHECKS = 0");
 
     await conn.query("DELETE FROM sale_service_items");
@@ -124,8 +144,8 @@ async function replaceState(state) {
     }
 
     for (const s of state.sales || []) {
-      await conn.query("INSERT INTO sales (id, fecha, cliente_id, subtotal, iva, total, metodo_pago) VALUES (?, ?, ?, ?, ?, ?, ?)", [
-        s.id, new Date(s.fecha), s.clienteId || null, s.subtotal || 0, s.iva || 0, s.total || 0, s.metodoPago || null
+      await conn.query("INSERT INTO sales (id, fecha, cliente_id, subtotal, iva, total, metodo_pago, comision_porcentaje, comision_valor, neto_recibido, comision_entidad_porcentaje, comision_entidad_valor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+        s.id, new Date(s.fecha), s.clienteId || null, s.subtotal || 0, s.iva || 0, s.total || 0, s.metodoPago || null, s.comisionPorcentaje ?? null, s.comisionValor || 0, s.netoRecibido ?? s.total ?? 0, s.comisionEntidadPorcentaje ?? (s.metodoPago === "QR" ? s.comisionPorcentaje ?? null : null), s.comisionEntidadValor ?? (s.metodoPago === "QR" ? s.comisionValor || 0 : 0)
       ]);
       for (const item of s.items || []) {
         if (item.tipo === "servicio") {

@@ -130,9 +130,15 @@
       { value: "Nequi", label: "Nequi" },
       { value: "Daviplata", label: "Daviplata" },
       { value: "QR", label: "Pago por QR" },
+      { value: "SisteCredito", label: "SisteCrédito" },
+      { value: "Addi", label: "Addi" },
       { value: "Otro", label: "Otro" },
       { value: "Credito", label: "Crédito" }
     ];
+    const commissionPaymentMethods = new Set(["Tarjeta", "Tarjeta débito", "QR", "SisteCredito", "Addi"]);
+    const entityFeePaymentMethods = new Set(["SisteCredito", "Addi"]);
+    const entityFeeRate = 2;
+    const commissionRates = [1.5, 2, 3, 4, 5];
     const getLocalDateInputValue = (value) => {
       const date = value instanceof Date ? value : new Date(value);
       if (Number.isNaN(date.getTime())) return "";
@@ -147,14 +153,18 @@
     const API_BASE = "http://localhost:4000/api";
 
     // Guarda el estado completo en MySQL (reemplaza el antiguo localStorage)
-    async function saveDB() {
+    async function saveDB(authorizationCode = "") {
       try {
         const res = await fetch(`${API_BASE}/state`, {
           method: "PUT",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(authorizationCode ? { "X-Sale-Delete-Code": authorizationCode } : {}) },
           body: JSON.stringify(db)
         });
-        if (!res.ok) throw new Error("Respuesta no válida del servidor");
+        if (!res.ok) {
+          const failure = await res.json().catch(() => ({}));
+          showToast([403, 503].includes(res.status) ? failure.error || "No se autorizó la eliminación." : "No se pudo guardar en MySQL.", "danger");
+          return false;
+        }
 
         const indicator = document.createElement("div");
         indicator.style.cssText = "position: fixed; top: 20px; right: 20px; background: #10b981; color: white; padding: 8px 16px; border-radius: 6px; font-size: 12px; z-index: 9999; animation: fadeInOut 2s ease-in-out;";
@@ -1168,13 +1178,16 @@
       }).join("");
       const emptyMessage = appState.historyMode === "date" ? "No hay ventas para la fecha seleccionada." : "No hay ventas registradas.";
       const tableRows = rows || `<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500">${emptyMessage}</td></tr>`;
+      const dailyInvoiced = filtered.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+      const dailyEntityFees = filtered.reduce((sum, sale) => sum + Number(sale.comisionEntidadValor ?? (sale.metodoPago === "QR" ? sale.comisionValor : 0) ?? 0), 0);
+      const dailyNetReceived = filtered.reduce((sum, sale) => sum + Number(sale.netoRecibido ?? sale.total ?? 0), 0);
       const dailySummary = appState.historyMode === "date"
-        ? `<div class="grid grid-cols-2 gap-3 mb-4"><div class="rounded-lg bg-slate-50 p-3"><p class="text-xs text-slate-500">Ventas del día</p><p class="mt-1 text-lg font-bold">${filtered.length}</p></div><div class="rounded-lg bg-slate-50 p-3"><p class="text-xs text-slate-500">Total del día</p><p class="mt-1 text-lg font-bold">${formatCurrency(filtered.reduce((total, sale) => total + sale.total, 0))}</p></div></div>`
+        ? `<div class="grid grid-cols-2 gap-3 mb-4 md:grid-cols-4"><div class="rounded-lg bg-slate-50 p-3"><p class="text-xs text-slate-500">Ventas del día</p><p class="mt-1 text-lg font-bold">${filtered.length}</p></div><div class="rounded-lg bg-slate-50 p-3"><p class="text-xs text-slate-500">Total facturado</p><p class="mt-1 text-lg font-bold">${formatCurrency(dailyInvoiced)}</p></div><div class="rounded-lg bg-slate-50 p-3"><p class="text-xs text-slate-500">Comisiones bancarias / plataforma</p><p class="mt-1 text-lg font-bold">${formatCurrency(dailyEntityFees)}</p></div><div class="rounded-lg bg-teal-50 p-3"><p class="text-xs text-slate-600">Neto recibido para caja</p><p class="mt-1 text-lg font-bold text-teal-900">${formatCurrency(dailyNetReceived)}</p></div></div>`
         : "";
       const dateFilter = appState.historyMode === "date"
         ? `<div><label for="historyDate" class="mb-1 block text-sm font-semibold">Fecha</label><input id="historyDate" type="date" value="${appState.historyDate}" onchange="setHistoryDate(this.value)" class="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-56" /></div>`
         : "";
-      return `<div class="view-card"><h3 class="text-lg font-bold mb-4">💳 Historial de ventas</h3><div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><label for="historyMode" class="mb-1 block text-sm font-semibold">Consultar</label><select id="historyMode" onchange="setHistoryMode(this.value)" class="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-56"><option value="all" ${appState.historyMode === "all" ? "selected" : ""}>Todo el historial</option><option value="date" ${appState.historyMode === "date" ? "selected" : ""}>Por fecha</option></select></div>${dateFilter}</div>${dailySummary}<div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="px-3 py-2 text-left">Ticket</th><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2">Items</th><th class="px-3 py-2 text-right">Total</th><th class="px-3 py-2">Ver</th><th class="px-3 py-2">Acción</th></tr></thead><tbody>${tableRows}</tbody></table></div></div>`;
+      return `<div class="view-card"><h3 class="text-lg font-bold mb-4">💳 Historial de ventas</h3><div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><label for="historyMode" class="mb-1 block text-sm font-semibold">Consultar</label><select id="historyMode" onchange="setHistoryMode(this.value)" class="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-56"><option value="all" ${appState.historyMode === "all" ? "selected" : ""}>Todo el historial</option><option value="date" ${appState.historyMode === "date" ? "selected" : ""}>Por fecha</option></select></div>${dateFilter}</div>${dailySummary}<div class="overflow-x-auto rounded-xl border bg-white"><table class="min-w-full text-sm"><thead class="bg-slate-50 text-xs uppercase border-b"><tr><th class="px-3 py-2 text-left">Ticket</th><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2">Items</th><th class="px-3 py-2 text-right">Total</th><th class="px-3 py-2">Factura</th><th class="px-3 py-2">Acción</th></tr></thead><tbody>${tableRows}</tbody></table></div></div>`;
     }
 
     function getCreditPaid(creditId, state = db) {
@@ -1316,7 +1329,50 @@
         showToast("No se puede eliminar: esta venta a crédito ya tiene abonos registrados.", "warning");
         return;
       }
-      if (!confirm(`¿Eliminar la venta ${sale.id} por ${formatCurrency(sale.total)}? Se devolverá al inventario el stock que esta venta descontó.`)) return;
+      document.getElementById("modalContent").innerHTML = `
+        <form id="saleDeletionForm" class="modal-content" role="dialog" aria-modal="true" aria-labelledby="saleDeletionTitle">
+          <div class="modal-header"><h2 id="saleDeletionTitle" class="text-lg font-bold">Autorizar eliminación</h2></div>
+          <div class="modal-body space-y-3">
+            <p class="text-sm break-words">Venta ${escapeHtml(sale.id)} por <strong>${formatCurrency(sale.total)}</strong></p>
+            <p class="text-sm">Se devolverá al inventario el stock descontado por esta venta.</p>
+            <div>
+              <label for="saleDeletionCode" class="block text-sm font-semibold mb-1">Código de autorización</label>
+              <input id="saleDeletionCode" type="password" required pattern="[A-Za-z0-9]+" maxlength="128" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="saleDeletionError" class="w-full px-3 py-2 border rounded-lg text-sm" />
+            </div>
+            <p id="saleDeletionError" role="alert" class="text-sm text-red-700"></p>
+          </div>
+          <div class="modal-footer">
+            <button id="cancelSaleDeletion" type="button" onclick="cerrarModal()" class="flex-1 px-3 py-2 border rounded-lg font-semibold text-sm">Cancelar</button>
+            <button id="confirmSaleDeletion" type="submit" class="flex-1 px-3 py-2 bg-red-700 text-white rounded-lg font-semibold text-sm">Autorizar y eliminar</button>
+          </div>
+        </form>`;
+      document.getElementById("saleDeletionForm").addEventListener("submit", event => {
+        event.preventDefault();
+        confirmarEliminarVenta(saleId);
+      });
+      document.getElementById("modalBackdrop").classList.add("active");
+      document.getElementById("saleDeletionCode").focus();
+    }
+
+    async function confirmarEliminarVenta(saleId) {
+      if (appState.savingSale) return;
+      const input = document.getElementById("saleDeletionCode");
+      const error = document.getElementById("saleDeletionError");
+      const authorizationCode = input?.value || "";
+      if (!/^[A-Za-z0-9]{1,128}$/.test(authorizationCode)) {
+        if (error) error.textContent = "Ingresa un código de autorización alfanumérico válido.";
+        input?.focus();
+        return;
+      }
+      const saleIndex = db.sales.findIndex(entry => entry.id === saleId);
+      if (saleIndex === -1) return;
+      const sale = db.sales[saleIndex];
+      const saleCreditIds = (db.customerCredits || []).filter(credit => credit.saleId === saleId).map(credit => credit.id);
+      if ((db.customerPayments || []).some(payment => saleCreditIds.includes(payment.creditId))) {
+        error.textContent = "No se puede eliminar: esta venta a crédito ya tiene abonos registrados.";
+        input.value = "";
+        return;
+      }
 
       const stockBefore = new Map(db.products.map(product => [product.id, product.stockActual]));
       const invoicesBefore = Array.isArray(db.invoices) ? db.invoices : null;
@@ -1330,15 +1386,36 @@
       }
       if (invoicesBefore) db.invoices = invoicesBefore.filter(invoice => invoice.saleId !== saleId);
 
-      if (!await saveDB()) {
+      const confirmButton = document.getElementById("confirmSaleDeletion");
+      const cancelButton = document.getElementById("cancelSaleDeletion");
+      appState.savingSale = true;
+      appState.deletingSale = true;
+      input.value = "";
+      input.disabled = true;
+      confirmButton.disabled = true;
+      cancelButton.disabled = true;
+      error.textContent = "";
+      let saved = false;
+      try {
+        saved = await saveDB(authorizationCode);
+      } finally {
+        appState.savingSale = false;
+        appState.deletingSale = false;
+        input.disabled = false;
+        confirmButton.disabled = false;
+        cancelButton.disabled = false;
+      }
+      if (!saved) {
         db.sales.splice(saleIndex, 0, sale);
         db.customerCredits = creditsBefore;
         db.products.forEach(product => { product.stockActual = stockBefore.get(product.id); });
         if (invoicesBefore) db.invoices = invoicesBefore;
+        error.textContent = "No se eliminó la venta. Verifica la autorización e intenta nuevamente.";
+        input.focus();
         return;
       }
       showToast("Venta eliminada y stock restaurado", "success");
-      renderView();
+      cerrarModal();
     }
 
     function renderPOS(st, search = "") {
@@ -1724,7 +1801,7 @@
       const cartSummary = appState.cart.map(i => `<div class="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-200 last:border-b-0"><span class="truncate">${escapeHtml(i.nombre)}</span><span class="text-slate-500 whitespace-nowrap">${i.cantidad} x ${formatCurrency(i.precio)}</span><span class="font-semibold whitespace-nowrap">${formatCurrency(i.precio * i.cantidad)}</span></div>`).join("");
       const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
       const iva = 0;
-      const total = subtotal;
+      const total = subtotal + iva;
 
       const div = document.createElement("div");
       div.className = "modal-content modal-wide";
@@ -1749,6 +1826,14 @@
             </div>
           </div>
 
+          <div id="commissionGroup" class="hidden mt-3">
+            <label for="commissionSelect" class="block text-sm font-semibold mb-1">Porcentaje de comisión</label>
+            <select id="commissionSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
+              <option value="">Selecciona el porcentaje</option>
+              ${commissionRates.map(rate => `<option value="${rate}">${rate}%</option>`).join("")}
+            </select>
+          </div>
+
           <div class="bg-slate-50 p-3 rounded-lg mt-3 text-sm border">
             <div class="font-semibold pb-2">Art&iacute;culos y servicios: ${appState.cart.length}</div>
             ${cartSummary}
@@ -1756,7 +1841,11 @@
 
           <div class="bg-slate-50 p-2 rounded-lg mt-2 text-sm space-y-1 border-2 border-slate-900">
             <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(subtotal)}</span></div>
-            <div class="flex justify-between border-t pt-1"><span class="font-bold">TOTAL:</span><span class="font-bold text-base">${formatCurrency(total)}</span></div>
+            <div class="flex justify-between"><span>IVA:</span><span class="font-semibold">${formatCurrency(iva)}</span></div>
+            <div id="commissionAmountRow" data-base="${total}" class="hidden flex justify-between"><span id="commissionAmountLabel">Comisión:</span><span id="commissionAmountValue" class="font-semibold">${formatCurrency(0)}</span></div>
+            <div id="entityFeeRow" class="hidden flex justify-between"><span id="entityFeeLabel">Retención de entidad:</span><span id="entityFeeValue" class="font-semibold">${formatCurrency(0)}</span></div>
+            <div id="netReceivedRow" class="hidden flex justify-between"><span class="font-bold">Neto para caja:</span><span id="netReceivedValue" class="font-bold">${formatCurrency(total)}</span></div>
+            <div class="flex justify-between border-t pt-1"><span class="font-bold">TOTAL:</span><span id="checkoutTotal" class="font-bold text-base">${formatCurrency(total)}</span></div>
           </div>
         </div>
         <div class="modal-footer">
@@ -1768,20 +1857,98 @@
       document.getElementById("modalContent").innerHTML = "";
       document.getElementById("modalContent").appendChild(div);
       document.getElementById("modalBackdrop").classList.add("active");
+      document.getElementById("metodoSelect").addEventListener("change", actualizarCampoComision);
+      document.getElementById("commissionSelect").addEventListener("change", actualizarResumenComision);
+      actualizarCampoComision();
+    }
+
+    function actualizarCampoComision() {
+      const method = document.getElementById("metodoSelect")?.value;
+      const commissionGroup = document.getElementById("commissionGroup");
+      const commissionSelect = document.getElementById("commissionSelect");
+      const applies = commissionPaymentMethods.has(method);
+      if (commissionGroup) commissionGroup.classList.toggle("hidden", !applies);
+      if (commissionSelect) {
+        commissionSelect.required = applies;
+        if (method === "QR") commissionSelect.value = "1.5";
+        else if (!applies || commissionSelect.value === "1.5") commissionSelect.value = "";
+      }
+      actualizarResumenComision();
+    }
+
+    function calcularValorComision(base, percentage) {
+      return Math.round(Number(base || 0) * Number(percentage || 0) / 100);
+    }
+
+    function calcularComisionEntidad(method, total, percentage, amount) {
+      if (method === "QR") return { porcentaje: Number(percentage), valor: amount };
+      if (method === "Tarjeta" || method === "Tarjeta débito") {
+        return { porcentaje: 2.67, valor: calcularValorComision(total, 2.67) + 300 };
+      }
+      if (entityFeePaymentMethods.has(method)) {
+        return { porcentaje: entityFeeRate, valor: calcularValorComision(total, entityFeeRate) };
+      }
+      return { porcentaje: null, valor: 0 };
+    }
+
+    function actualizarResumenComision() {
+      const method = document.getElementById("metodoSelect")?.value;
+      const commissionSelect = document.getElementById("commissionSelect");
+      const commissionRow = document.getElementById("commissionAmountRow");
+      const entityFeeRow = document.getElementById("entityFeeRow");
+      const netReceivedRow = document.getElementById("netReceivedRow");
+      const percentage = Number(commissionSelect?.value || 0);
+      const applies = commissionPaymentMethods.has(method) && commissionRates.includes(percentage);
+      const base = Number(commissionRow?.dataset.base || 0);
+      const amount = applies ? calcularValorComision(base, percentage) : 0;
+      const isQr = method === "QR";
+      const total = base + (applies && !isQr ? amount : 0);
+      const retention = applies ? calcularComisionEntidad(method, total, percentage, amount) : { porcentaje: null, valor: 0 };
+      const hasEntityFee = !isQr && retention.porcentaje != null;
+      const entityFee = retention.valor;
+      const netReceived = Math.max(0, total - entityFee);
+      if (commissionRow) commissionRow.classList.toggle("hidden", !applies);
+      if (entityFeeRow) entityFeeRow.classList.toggle("hidden", !hasEntityFee);
+      if (netReceivedRow) netReceivedRow.classList.toggle("hidden", (!isQr && !hasEntityFee) || !applies);
+      const label = document.getElementById("commissionAmountLabel");
+      const amountValue = document.getElementById("commissionAmountValue");
+      const entityFeeLabel = document.getElementById("entityFeeLabel");
+      const entityFeeValue = document.getElementById("entityFeeValue");
+      const totalValue = document.getElementById("checkoutTotal");
+      const netReceivedValue = document.getElementById("netReceivedValue");
+      if (label && applies) label.textContent = isQr ? `Comisión bancaria QR (${percentage}%):` : `Comisión al cliente (${percentage}%):`;
+      if (amountValue) amountValue.textContent = formatCurrency(amount);
+      if (entityFeeLabel && hasEntityFee) {
+        entityFeeLabel.textContent = entityFeePaymentMethods.has(method)
+          ? `Retención ${method === "SisteCredito" ? "SisteCrédito" : "Addi"} (${entityFeeRate}%):`
+          : `Retención bancaria (2,67% + ${formatCurrency(300)}):`;
+      }
+      if (entityFeeValue) entityFeeValue.textContent = formatCurrency(entityFee);
+      if (netReceivedValue) netReceivedValue.textContent = formatCurrency(netReceived);
+      if (totalValue) totalValue.textContent = formatCurrency(total);
     }
 
     async function confirmarVenta() {
       if (!appState.cart.length || appState.savingSale) return;
       const clienteId = document.getElementById("clienteSelect").value || null;
       const metodo = document.getElementById("metodoSelect").value;
+      const comisionInput = document.getElementById("commissionSelect")?.value || "";
+      const requiereComision = commissionPaymentMethods.has(metodo);
       if (metodo === "Credito" && !clienteId) {
         showToast("Debe seleccionar un cliente para ventas a crédito.", "warning");
+        return;
+      }
+      if (requiereComision && !commissionRates.includes(Number(comisionInput))) {
+        showToast("Selecciona el porcentaje de comisión para este medio de pago.", "warning");
         return;
       }
 
       const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
       const iva = 0;
-      const total = subtotal;
+      const comisionValor = requiereComision ? calcularValorComision(subtotal + iva, comisionInput) : 0;
+      const total = subtotal + iva + (metodo === "QR" ? 0 : comisionValor);
+      const { porcentaje: comisionEntidadPorcentaje, valor: comisionEntidadValor } = calcularComisionEntidad(metodo, total, comisionInput, comisionValor);
+      const netoRecibido = Math.max(0, total - comisionEntidadValor);
 
       const sale = {
         id: uid("sale"),
@@ -1795,7 +1962,12 @@
         subtotal,
         iva,
         total,
-        metodoPago: metodo
+        metodoPago: metodo,
+        comisionPorcentaje: requiereComision ? Number(comisionInput) : null,
+        comisionValor,
+        comisionEntidadPorcentaje,
+        comisionEntidadValor,
+        netoRecibido
       };
 
       const stockBefore = new Map(db.products.map(product => [product.id, product.stockActual]));
@@ -1871,6 +2043,7 @@
           <div class="receipt-separator"></div>
           <div class="receipt-detail"><span>Subtotal</span><span class="receipt-amount">${formatCurrency(sale.subtotal)}</span></div>
           <div class="receipt-detail"><span>IVA</span><span class="receipt-amount">${formatCurrency(sale.iva || 0)}</span></div>
+          ${sale.comisionPorcentaje == null || sale.metodoPago === "QR" ? "" : `<div class="receipt-detail"><span>Comisión (${Number(sale.comisionPorcentaje)}%)</span><span class="receipt-amount">${formatCurrency(sale.comisionValor)}</span></div>`}
           <div class="receipt-separator"></div>
           <div class="receipt-detail receipt-total"><span>TOTAL</span><span class="receipt-amount">${formatCurrency(sale.total)}</span></div>
           <div class="receipt-separator"></div>
@@ -1899,7 +2072,7 @@
             </div>
             <div class="text-right">
               <p class="font-semibold">CLIENTE: ${customer?.nombre || "CONSUMIDOR"}</p>
-              <p class="font-semibold mt-2">PAGO: ${sale.metodoPago}</p>
+              <p class="font-semibold mt-2">PAGO: ${escapeHtml(sale.metodoPago || "No especificado")}</p>
             </div>
           </div>
 
@@ -1913,6 +2086,7 @@
           <div class="bg-slate-50 p-2 rounded-lg text-sm space-y-1 border-2 border-slate-900">
             <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(sale.subtotal)}</span></div>
             <div class="flex justify-between"><span>IVA:</span><span class="font-semibold">${formatCurrency(sale.iva || 0)}</span></div>
+            ${sale.comisionPorcentaje == null || sale.metodoPago === "QR" ? "" : `<div class="flex justify-between"><span>Comisión (${Number(sale.comisionPorcentaje)}%):</span><span class="font-semibold">${formatCurrency(sale.comisionValor)}</span></div>`}
             <div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">TOTAL:</span><span class="font-bold">${formatCurrency(sale.total)}</span></div>
           </div>
         </div>
@@ -1934,6 +2108,9 @@
     }
 
     function cerrarModal() {
+      if (appState.deletingSale) return;
+      const authorizationInput = document.getElementById("saleDeletionCode");
+      if (authorizationInput) authorizationInput.value = "";
       document.getElementById("modalBackdrop").classList.remove("active");
       document.getElementById("thermalPrintRoot").innerHTML = "";
       renderView();

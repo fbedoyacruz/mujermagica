@@ -30,15 +30,26 @@ function frontend(state = fixture(), elements = {}) {
   return context;
 }
 
-function backend(pool) {
-  const context = vm.createContext({ require: () => pool, module: { exports: {} }, Date, Map });
+function saleDeletionFrontend(state, code = "AdminTest9") {
+  const handlers = {};
+  const elements = {
+    modalContent: { innerHTML: "" }, modalBackdrop: { classList: { add: () => {} } },
+    saleDeletionForm: { addEventListener: (event, handler) => { handlers[event] = handler; } },
+    saleDeletionCode: { value: code, disabled: false, focus: () => {} },
+    saleDeletionError: { textContent: "" }, confirmSaleDeletion: { disabled: false }, cancelSaleDeletion: { disabled: false }
+  };
+  return { app: frontend(state, elements), elements, handlers };
+}
+
+function backend(pool, env = {}) {
+  const context = vm.createContext({ require: name => name === "./db" ? pool : require(name), process: { env }, module: { exports: {} }, Date, Map });
   vm.runInContext(fs.readFileSync(path.join(__dirname, "state.js"), "utf8"), context);
   return context.module.exports;
 }
 
 test("fecha de nacimiento persiste como fecha civil y admite clientes antiguos", async () => {
   const inserts = [];
-  const conn = { query: async (sql, values) => { if (sql.startsWith("INSERT INTO customers ")) inserts.push(values); }, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} };
+  const conn = { query: async (sql, values) => { if (sql.startsWith("INSERT INTO customers ")) inserts.push(values); return [[]]; }, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} };
   const store = backend({
     getConnection: async () => conn,
     query: async sql => {
@@ -69,6 +80,9 @@ test("migración de nacimiento agrega la columna solo si falta", async () => {
     assert.equal(queries.filter(sql => sql === "ALTER TABLE customers ADD COLUMN fecha_nacimiento DATE NULL").length, missing ? 1 : 0);
     assert.equal(queries.filter(sql => sql === "ALTER TABLE products ADD COLUMN codigo_barras VARCHAR(100) NULL").length, missing ? 1 : 0);
     assert.equal(queries.filter(sql => sql === "ALTER TABLE products ADD UNIQUE KEY uq_products_codigo_barras (codigo_barras)").length, 1);
+    assert.equal(queries.filter(sql => sql === "ALTER TABLE sales ADD COLUMN comision_porcentaje DECIMAL(5,2) NULL").length, missing ? 1 : 0);
+    assert.equal(queries.filter(sql => sql === "ALTER TABLE sales ADD COLUMN comision_valor DECIMAL(12,2) NOT NULL DEFAULT 0").length, missing ? 1 : 0);
+    assert.equal(queries.filter(sql => sql === "ALTER TABLE sales ADD COLUMN neto_recibido DECIMAL(12,2) NULL").length, missing ? 1 : 0);
   }
 });
 
@@ -236,8 +250,214 @@ test("métodos de pago conservan los valores existentes e incluyen opciones adic
   const app = frontend();
   const methods = JSON.parse(vm.runInContext("JSON.stringify(paymentMethods)", app));
   assert.deepEqual(methods.map(method => method.value), [
-    "Efectivo", "Tarjeta", "Tarjeta débito", "Transferencia", "Nequi", "Daviplata", "QR", "Otro", "Credito"
+    "Efectivo", "Tarjeta", "Tarjeta débito", "Transferencia", "Nequi", "Daviplata", "QR", "SisteCredito", "Addi", "Otro", "Credito"
   ]);
+});
+
+test("selector de comisión se requiere para tarjetas, QR, SisteCrédito y Addi", () => {
+  const commissionGroup = { hidden: true, classList: { toggle: (className, hidden) => { commissionGroup.hidden = hidden; } } };
+  const commissionSelect = { required: false, value: "" };
+  const commissionAmountRow = { dataset: { base: "20000" }, hidden: true, classList: { toggle: (className, hidden) => { commissionAmountRow.hidden = hidden; } } };
+  const entityFeeRow = { hidden: true, classList: { toggle: (className, hidden) => { entityFeeRow.hidden = hidden; } } };
+  const netReceivedRow = { hidden: true, classList: { toggle: (className, hidden) => { netReceivedRow.hidden = hidden; } } };
+  const methodSelect = { value: "Tarjeta" };
+  const elements = {
+    metodoSelect: methodSelect,
+    commissionGroup,
+    commissionSelect,
+    commissionAmountRow,
+    entityFeeRow,
+    netReceivedRow,
+    commissionAmountLabel: { textContent: "" },
+    commissionAmountValue: { textContent: "" },
+    entityFeeLabel: { textContent: "" },
+    entityFeeValue: { textContent: "" },
+    checkoutTotal: { textContent: "" },
+    netReceivedValue: { textContent: "" }
+  };
+  const app = frontend(fixture(), elements);
+
+  app.actualizarCampoComision();
+  assert.equal(commissionGroup.hidden, false);
+  assert.equal(commissionSelect.required, true);
+  assert.deepEqual(JSON.parse(vm.runInContext("JSON.stringify(commissionRates)", app)), [1.5, 2, 3, 4, 5]);
+
+  for (const method of ["Tarjeta débito", "QR", "SisteCredito", "Addi"]) {
+    methodSelect.value = method;
+    app.actualizarCampoComision();
+    assert.equal(commissionGroup.hidden, false);
+    assert.equal(commissionSelect.required, true);
+  }
+  methodSelect.value = "Tarjeta";
+  commissionSelect.value = "3";
+  app.actualizarResumenComision();
+  assert.equal(commissionAmountRow.hidden, false);
+  assert.equal(elements.checkoutTotal.textContent, vm.runInContext("formatCurrency(20600)", app));
+  assert.equal(elements.commissionAmountValue.textContent, vm.runInContext("formatCurrency(600)", app));
+  assert.equal(netReceivedRow.hidden, false);
+  assert.equal(entityFeeRow.hidden, false);
+  assert.equal(elements.entityFeeValue.textContent, vm.runInContext("formatCurrency(850)", app));
+  assert.equal(elements.entityFeeLabel.textContent, `Retención bancaria (2,67% + ${vm.runInContext("formatCurrency(300)", app)}):`);
+  assert.equal(elements.netReceivedValue.textContent, vm.runInContext("formatCurrency(19750)", app));
+  methodSelect.value = "SisteCredito";
+  commissionSelect.value = "3";
+  app.actualizarResumenComision();
+  assert.equal(entityFeeRow.hidden, false);
+  assert.equal(elements.entityFeeLabel.textContent, "Retención SisteCrédito (2%):");
+  assert.equal(elements.entityFeeValue.textContent, vm.runInContext("formatCurrency(412)", app));
+  assert.equal(netReceivedRow.hidden, false);
+  assert.equal(elements.netReceivedValue.textContent, vm.runInContext("formatCurrency(20188)", app));
+  methodSelect.value = "Efectivo";
+  commissionSelect.value = "3";
+  app.actualizarCampoComision();
+  assert.equal(commissionGroup.hidden, true);
+  assert.equal(commissionSelect.required, false);
+  assert.equal(commissionSelect.value, "");
+  assert.equal(entityFeeRow.hidden, true);
+  assert.equal(netReceivedRow.hidden, true);
+});
+
+test("SisteCrédito y Addi cobran comisión al cliente y retienen 2% del total facturado", async () => {
+  for (const metodoPago of ["SisteCredito", "Addi"]) {
+    const state = fixture();
+    const elements = {
+      clienteSelect: { value: "" }, metodoSelect: { value: metodoPago }, commissionSelect: { value: "3" },
+      modalContent: { innerHTML: "", appendChild: element => { elements.invoiceMarkup = element.innerHTML; } },
+      modalBackdrop: { classList: { add: () => {} } }, thermalPrintRoot: { innerHTML: "" }
+    };
+    const app = frontend(state, elements);
+    app.document.createElement = () => ({ className: "", innerHTML: "" });
+    app.cartFixture = [{ productId: "product_1", nombre: "Shampoo", cantidad: 1, precio: 100000 }];
+    vm.runInContext("appState.cart = cartFixture; saveDB = async () => true;", app);
+
+    await app.confirmarVenta();
+
+    assert.equal(state.sales[0].metodoPago, metodoPago);
+    assert.equal(state.sales[0].comisionValor, 3000);
+    assert.equal(state.sales[0].total, 103000);
+    assert.equal(state.sales[0].comisionEntidadPorcentaje, 2);
+    assert.equal(state.sales[0].comisionEntidadValor, 2060);
+    assert.equal(state.sales[0].netoRecibido, 100940);
+    app.verFactura(state.sales[0].id);
+    assert.match(elements.invoiceMarkup, /Comisión \(3%\)/);
+    assert.doesNotMatch(elements.invoiceMarkup, /Retención|2%/);
+    assert.doesNotMatch(elements.thermalPrintRoot.innerHTML, /Retención|2%/);
+  }
+});
+
+test("QR preselecciona 1.5 por ciento y calcula el importe sobre el subtotal", () => {
+  const commissionGroup = { hidden: true, classList: { toggle: (className, hidden) => { commissionGroup.hidden = hidden; } } };
+  const commissionSelect = { required: false, value: "" };
+  const commissionAmountRow = { dataset: { base: "20000" }, hidden: true, classList: { toggle: (className, hidden) => { commissionAmountRow.hidden = hidden; } } };
+  const entityFeeRow = { hidden: true, classList: { toggle: (className, hidden) => { entityFeeRow.hidden = hidden; } } };
+  const netReceivedRow = { hidden: true, classList: { toggle: (className, hidden) => { netReceivedRow.hidden = hidden; } } };
+  const elements = {
+    metodoSelect: { value: "QR" }, commissionGroup, commissionSelect, commissionAmountRow, entityFeeRow, netReceivedRow,
+    commissionAmountLabel: { textContent: "" }, commissionAmountValue: { textContent: "" }, entityFeeLabel: { textContent: "" }, entityFeeValue: { textContent: "" }, checkoutTotal: { textContent: "" }, netReceivedValue: { textContent: "" }
+  };
+  const app = frontend(fixture(), elements);
+  app.actualizarCampoComision();
+  assert.equal(commissionSelect.value, "1.5");
+  assert.equal(elements.commissionAmountLabel.textContent, "Comisión bancaria QR (1.5%):");
+  assert.equal(elements.commissionAmountValue.textContent, vm.runInContext("formatCurrency(300)", app));
+  assert.equal(elements.checkoutTotal.textContent, vm.runInContext("formatCurrency(20000)", app));
+  assert.equal(entityFeeRow.hidden, true);
+  assert.equal(elements.netReceivedRow.hidden, false);
+  assert.equal(elements.netReceivedValue.textContent, vm.runInContext("formatCurrency(19700)", app));
+});
+
+test("venta suma comisión calculada al total, la discrimina y exige selección", async () => {
+  const state = fixture();
+  const elements = { clienteSelect: { value: "" }, metodoSelect: { value: "Tarjeta" }, commissionSelect: { value: "3" } };
+  const app = frontend(state, elements);
+  app.cartFixture = [{ productId: "product_1", nombre: "Shampoo", cantidad: 1, precio: 20000 }];
+  vm.runInContext("appState.cart = cartFixture; saveDB = async () => true;", app);
+
+  await app.confirmarVenta();
+  assert.equal(state.sales[0].metodoPago, "Tarjeta");
+  assert.equal(state.sales[0].comisionPorcentaje, 3);
+  assert.equal(state.sales[0].comisionValor, 600);
+  assert.equal(state.sales[0].subtotal, 20000);
+  assert.equal(state.sales[0].total, 20600);
+  assert.equal(state.sales[0].comisionEntidadPorcentaje, 2.67);
+  assert.equal(state.sales[0].comisionEntidadValor, 850);
+  assert.equal(state.sales[0].netoRecibido, 19750);
+
+  const missingCommissionState = fixture();
+  const missingCommissionApp = frontend(missingCommissionState, { clienteSelect: { value: "" }, metodoSelect: { value: "QR" }, commissionSelect: { value: "" } });
+  missingCommissionApp.cartFixture = [{ productId: "product_1", nombre: "Shampoo", cantidad: 1, precio: 20000 }];
+  vm.runInContext("appState.cart = cartFixture; saveDB = async () => true;", missingCommissionApp);
+  await missingCommissionApp.confirmarVenta();
+  assert.equal(missingCommissionState.sales.length, 0);
+});
+
+test("tarjetas crédito y débito retienen 2.67% del total más 300 sin imprimir el descuento bancario", async () => {
+  for (const metodoPago of ["Tarjeta", "Tarjeta débito"]) {
+    const state = fixture();
+    const elements = {
+      clienteSelect: { value: "" }, metodoSelect: { value: metodoPago }, commissionSelect: { value: "5" },
+      modalContent: { innerHTML: "", appendChild: element => { elements.invoiceMarkup = element.innerHTML; } },
+      modalBackdrop: { classList: { add: () => {} } }, thermalPrintRoot: { innerHTML: "" }
+    };
+    const app = frontend(state, elements);
+    app.document.createElement = () => ({ className: "", innerHTML: "" });
+    app.cartFixture = [{ productId: "product_1", nombre: "Shampoo", cantidad: 1, precio: 100000 }];
+    vm.runInContext("appState.cart = cartFixture; saveDB = async () => true;", app);
+    await app.confirmarVenta();
+    const sale = state.sales[0];
+    assert.equal(sale.comisionValor, 5000);
+    assert.equal(sale.total, 105000);
+    assert.equal(sale.comisionEntidadPorcentaje, 2.67);
+    assert.equal(sale.comisionEntidadValor, 3104);
+    assert.equal(sale.netoRecibido, 101896);
+    app.verFactura(sale.id);
+    for (const markup of [elements.invoiceMarkup, elements.thermalPrintRoot.innerHTML]) {
+      assert.match(markup, /Comisión \(5%\)/);
+      assert.ok(markup.includes(vm.runInContext("formatCurrency(105000)", app)));
+      assert.doesNotMatch(markup, /Retención|2[.,]67|3\.104|101\.896/);
+    }
+    vm.runInContext(`appState.historyMode = "date"; appState.historyDate = getLocalDateInputValue("${sale.fecha}");`, app);
+    const dailyHistory = app.renderVentas(state);
+    assert.match(dailyHistory, /\$\s?3\.104/);
+    assert.match(dailyHistory, /\$\s?101\.896/);
+  }
+});
+
+test("QR conserva factura bruta, descuenta comisión solo del neto de caja y no la imprime", async () => {
+  const state = fixture();
+  const elements = {
+    clienteSelect: { value: "" }, metodoSelect: { value: "QR" }, commissionSelect: { value: "1.5" },
+    modalContent: { innerHTML: "", appendChild: element => { elements.invoiceMarkup = element.innerHTML; } },
+    modalBackdrop: { classList: { add: () => {} } }, thermalPrintRoot: { innerHTML: "" }
+  };
+  const app = frontend(state, elements);
+  app.document.createElement = () => ({ className: "", innerHTML: "" });
+  app.cartFixture = [{ productId: "product_1", nombre: "Shampoo", cantidad: 5, precio: 20000 }];
+  vm.runInContext("appState.cart = cartFixture; saveDB = async () => true;", app);
+
+  await app.confirmarVenta();
+  const sale = state.sales[0];
+  assert.equal(sale.subtotal, 100000);
+  assert.equal(sale.comisionPorcentaje, 1.5);
+  assert.equal(sale.comisionValor, 1500);
+  assert.equal(sale.comisionEntidadPorcentaje, 1.5);
+  assert.equal(sale.comisionEntidadValor, 1500);
+  assert.equal(sale.total, 100000);
+  assert.equal(sale.netoRecibido, 98500);
+
+  app.verFactura(sale.id);
+  const formattedGrossTotal = vm.runInContext("formatCurrency(100000)", app);
+  assert.ok(elements.invoiceMarkup.includes(formattedGrossTotal));
+  assert.doesNotMatch(elements.invoiceMarkup, /Comisión \(1\.5%\)/);
+  assert.ok(elements.thermalPrintRoot.innerHTML.includes(formattedGrossTotal));
+  assert.doesNotMatch(elements.thermalPrintRoot.innerHTML, /Comisión \(1\.5%\)/);
+
+  vm.runInContext(`appState.historyMode = "date"; appState.historyDate = getLocalDateInputValue("${sale.fecha}");`, app);
+  const dailyHistory = app.renderVentas(state);
+  assert.match(dailyHistory, /Total facturado/);
+  assert.match(dailyHistory, /Comisiones bancarias \/ plataforma/);
+  assert.match(dailyHistory, /Neto recibido para caja/);
+  assert.match(dailyHistory, /\$\s?98\.500/);
 });
 
 test("venta a crédito exige cliente, descuenta stock y crea el saldo pendiente", async () => {
@@ -317,19 +537,78 @@ test("eliminar venta restaura solo el stock descontado y revierte si falla el gu
     { productId: "product_1", cantidad: 1, precio: 0, stockDescontado: false },
     { ...serviceItem }
   ] }];
-  const app = frontend(state);
+  const { app, elements } = saleDeletionFrontend(state);
   vm.runInContext("saveDB = async () => true", app);
   await app.eliminarVenta("sale_1");
+  assert.equal(state.sales.length, 1);
+  assert.equal(state.products[0].stockActual, 8);
+  assert.match(elements.modalContent.innerHTML, /Código de autorización/);
+  assert.match(elements.modalContent.innerHTML, /type="password"/);
+  await app.confirmarEliminarVenta("sale_1");
   assert.equal(state.sales.length, 0);
   assert.equal(state.products[0].stockActual, 10);
+  assert.equal(elements.saleDeletionCode.value, "");
 
   state.products[0].stockActual = 8;
   state.sales = [{ id: "sale_2", total: 40000, items: [{ productId: "product_1", cantidad: 2, precio: 20000, stockDescontado: true }] }];
-  const failedSaveApp = frontend(state);
+  const { app: failedSaveApp, elements: failedElements } = saleDeletionFrontend(state);
   vm.runInContext("saveDB = async () => false", failedSaveApp);
   await failedSaveApp.eliminarVenta("sale_2");
+  await failedSaveApp.confirmarEliminarVenta("sale_2");
   assert.equal(state.sales.length, 1);
   assert.equal(state.products[0].stockActual, 8);
+  assert.equal(failedElements.saleDeletionCode.value, "");
+  assert.match(failedElements.saleDeletionError.textContent, /No se eliminó/);
+  failedElements.saleDeletionCode.value = "NuevoIntento9";
+  vm.runInContext("saveDB = async () => true", failedSaveApp);
+  await failedSaveApp.confirmarEliminarVenta("sale_2");
+  assert.equal(state.sales.length, 0);
+  assert.equal(state.products[0].stockActual, 10);
+});
+
+test("modal de eliminación rechaza códigos vacíos o no alfanuméricos sin guardar", async () => {
+  for (const code of ["", " ", "codigo-con-guion", "A".repeat(129)]) {
+    const state = fixture();
+    state.sales = [{ id: "sale_1", total: 0, items: [] }];
+    const { app, elements } = saleDeletionFrontend(state, code);
+    vm.runInContext("saveDB = async () => { throw new Error('No debe guardar'); };", app);
+    await app.eliminarVenta("sale_1");
+    await app.confirmarEliminarVenta("sale_1");
+    assert.equal(state.sales.length, 1);
+    assert.match(elements.saleDeletionError.textContent, /alfanumérico/);
+  }
+});
+
+test("autorización viaja solo en la cabecera y un rechazo del backend conserva venta y stock", async () => {
+  const state = fixture();
+  state.products[0].stockActual = 8;
+  state.sales = [{ id: "sale_1", total: 40000, items: [{ productId: "product_1", cantidad: 2, precio: 20000 }] }];
+  const { app, elements } = saleDeletionFrontend(state);
+  let requests = 0;
+  let finishRequest;
+  app.fetch = async (url, options) => {
+    requests++;
+    assert.match(url, /\/api\/state$/);
+    assert.equal(options.headers["X-Sale-Delete-Code"], "AdminTest9");
+    assert.equal(options.body.includes("AdminTest9"), false);
+    return new Promise(resolve => {
+      finishRequest = () => resolve({ ok: false, status: 403, json: async () => ({ error: "Código incorrecto" }) });
+    });
+  };
+  await app.eliminarVenta("sale_1");
+  assert.equal(requests, 0);
+  const pending = app.confirmarEliminarVenta("sale_1");
+  assert.equal(elements.confirmSaleDeletion.disabled, true);
+  assert.equal(elements.cancelSaleDeletion.disabled, true);
+  await app.confirmarEliminarVenta("sale_1");
+  assert.equal(requests, 1);
+  finishRequest();
+  await pending;
+  assert.equal(elements.confirmSaleDeletion.disabled, false);
+  assert.equal(elements.cancelSaleDeletion.disabled, false);
+  assert.equal(state.sales.length, 1);
+  assert.equal(state.products[0].stockActual, 8);
+  assert.equal(elements.saleDeletionCode.value, "");
 });
 
 test("desactivar oculta el producto del POS y borrar protege productos con historial", async () => {
@@ -419,10 +698,10 @@ test("cobro de servicios no altera existencias y un fallo conserva el carrito", 
 
 test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async () => {
   const queries = [];
-  const conn = { query: async (sql, values) => { queries.push({ sql, values }); }, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} };
+  const conn = { query: async (sql, values) => { queries.push({ sql, values }); return [[]]; }, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} };
   const store = backend({ getConnection: async () => conn });
   const state = fixture();
-  state.sales = [{ id: "sale_1", fecha: "2026-10-13T12:00:00Z", total: 230000, items: [
+  state.sales = [{ id: "sale_1", fecha: "2026-10-13T12:00:00Z", subtotal: 230000, iva: 0, total: 236900, metodoPago: "SisteCredito", comisionPorcentaje: 3, comisionValor: 6900, netoRecibido: 232162, comisionEntidadPorcentaje: 2, comisionEntidadValor: 4738, items: [
     { productId: "product_1", cantidad: 1, precio: 20000 }, { ...serviceItem, costo: null }, { ...serviceItem, costo: 0 }
   ] }];
   state.customers = [{ id: "customer_1", nombre: "Pepito" }];
@@ -431,6 +710,7 @@ test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async (
   state.products[0].activo = false;
   state.products[0].codigoBarras = "00165840";
   state.providers = [{ id: "provider_1", nombre: "Proveedor", activo: false }];
+  state.sales[0].comisionValor = 6900;
   state.sales[0].items[0].stockDescontado = false;
   await store.replaceState(state);
   const providerInsert = queries.find(query => query.sql.startsWith("INSERT INTO providers "));
@@ -439,6 +719,12 @@ test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async (
   assert.equal(productInsert.values[5], 15000);
   assert.equal(productInsert.values[11], false);
   assert.equal(productInsert.values[12], "00165840");
+  const saleInsert = queries.find(query => query.sql.startsWith("INSERT INTO sales "));
+  assert.equal(saleInsert.values[7], 3);
+  assert.equal(saleInsert.values[8], 6900);
+  assert.equal(saleInsert.values[9], 232162);
+  assert.equal(saleInsert.values[10], 2);
+  assert.equal(saleInsert.values[11], 4738);
   assert.equal(queries.filter(query => query.sql.startsWith("INSERT INTO sale_items ")).length, 1);
   assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO sale_items ")).values[4], false);
   assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO customer_credits ")).values[2], "customer_1");
@@ -455,12 +741,56 @@ test("guardar ventas usa tablas separadas y conserva costo nulo y cero", async (
   assert.equal(queries.find(query => query.sql.startsWith("INSERT INTO services ")).values[3], null);
 });
 
-test("esquema de cartera evita foreign keys incompatibles con tablas antiguas", () => {
+test("backend exige autorización antes de borrar ventas desde cualquier reemplazo de estado", async () => {
+  for (const [configuredCode, suppliedCode, expectedStatus] of [
+    [undefined, "AdminTest9", 503], ["", "AdminTest9", 503],
+    ["AdminTest9", undefined, 403], ["AdminTest9", "OtroCodigo", 403],
+    ["AdminTest9", "admintest9", 403], ["AdminTest9", "", 403],
+    ["AdminTest9", "AdminTest9", null]
+  ]) {
+    const queries = [];
+    let rolledBack = false;
+    let released = false;
+    const conn = {
+      query: async sql => { queries.push(sql); return sql.startsWith("SELECT id FROM sales") ? [[{ id: "sale_1" }]] : [[]]; },
+      beginTransaction: async () => {}, commit: async () => {},
+      rollback: async () => { rolledBack = true; }, release: () => { released = true; }
+    };
+    const store = backend({ getConnection: async () => conn }, { SALE_DELETE_AUTH_CODE: configuredCode });
+    if (expectedStatus) {
+      await assert.rejects(store.replaceState(fixture(), suppliedCode), error => error.status === expectedStatus);
+      assert.equal(queries.some(sql => /^(DELETE|TRUNCATE|INSERT)/.test(sql)), false);
+      assert.equal(rolledBack, true);
+    } else {
+      await store.replaceState(fixture(), suppliedCode);
+      assert.equal(queries.includes("TRUNCATE TABLE sales"), true);
+    }
+    assert.equal(released, true);
+  }
+});
+
+test("guardar sin quitar ventas no exige un código de autorización", async () => {
+  const conn = {
+    query: async sql => sql.startsWith("SELECT id FROM sales") ? [[{ id: "sale_1" }]] : [[]],
+    beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {}
+  };
+  const state = fixture();
+  state.sales = [{ id: "sale_1", fecha: "2026-10-30T12:00:00Z", total: 0, items: [] }];
+  await backend({ getConnection: async () => conn }).replaceState(state);
+});
+
+test("esquema de cartera y comisiones evita incompatibilidades con tablas antiguas", () => {
   const schema = fs.readFileSync(path.join(__dirname, "sql/schema.sql"), "utf8");
   const creditsTable = /CREATE TABLE IF NOT EXISTS customer_credits \(([\s\S]*?)\) ENGINE=InnoDB/.exec(schema)?.[1] || "";
+  const salesTable = /CREATE TABLE IF NOT EXISTS sales \(([\s\S]*?)\) ENGINE=InnoDB/.exec(schema)?.[1] || "";
   assert.ok(creditsTable.includes("sale_id VARCHAR(50) NOT NULL UNIQUE"));
   assert.ok(creditsTable.includes("customer_id VARCHAR(50) NOT NULL"));
   assert.doesNotMatch(creditsTable, /FOREIGN KEY/i);
+  assert.match(salesTable, /comision_porcentaje DECIMAL\(5,2\) NULL/);
+  assert.match(salesTable, /comision_valor DECIMAL\(12,2\) NOT NULL DEFAULT 0/);
+  assert.match(salesTable, /neto_recibido DECIMAL\(12,2\) NULL/);
+  assert.match(salesTable, /comision_entidad_porcentaje DECIMAL\(5,2\) NULL/);
+  assert.match(salesTable, /comision_entidad_valor DECIMAL\(12,2\) NOT NULL DEFAULT 0/);
   assert.match(schema, /FOREIGN KEY \(credit_id\) REFERENCES customer_credits\(id\) ON DELETE CASCADE/);
 });
 
@@ -469,7 +799,7 @@ test("lectura conserva el nombre historico aunque cambie el catalogo", async () 
     providers: [{ id: "provider_1", nombre: "Proveedor", activo: 0 }],
     products: [{ id: "product_1", nombre: "Shampoo", precioVentaDetal: "20000.00", precioCompra: "10000.00", codigoBarras: "00165840", activo: 1 }],
     services: [{ id: "service_1", nombre: "Nuevo nombre", precioSugerido: "200000.00", costoSugerido: null, activo: 0 }],
-    sales: [{ id: "sale_1", subtotal: "180000.00", total: "180000.00", iva: "0.00" }],
+    sales: [{ id: "sale_1", subtotal: "180000.00", total: "185400.00", iva: "0.00", metodoPago: "Addi", comisionPorcentaje: "3.00", comisionValor: "5400.00", netoRecibido: "181692.00", comisionEntidadPorcentaje: "2.00", comisionEntidadValor: "3708.00" }],
     customer_credits: [{ id: "credit_1", saleId: "sale_1", customerId: "customer_1", monto: "500000.00", fecha: "2026-10-15T12:00:00Z" }],
     customer_payments: [{ id: "payment_1", creditId: "credit_1", monto: "150000.00", fecha: "2026-10-16T12:00:00Z", metodoPago: "Nequi", observaciones: "Abono" }],
     sale_service_items: [{ saleId: "sale_1", serviceId: "service_1", nombre: "Alisado", cantidad: 1, precio: "180000.00", costo: "0.00", observaciones: "Cabello largo" }]
@@ -484,6 +814,11 @@ test("lectura conserva el nombre historico aunque cambie el catalogo", async () 
   assert.equal(state.sales[0].items[0].precio, 180000);
   assert.equal(state.sales[0].items[0].costo, 0);
   assert.equal(state.sales[0].items[0].tipo, "servicio");
+  assert.equal(state.sales[0].comisionPorcentaje, 3);
+  assert.equal(state.sales[0].comisionValor, 5400);
+  assert.equal(state.sales[0].netoRecibido, 181692);
+  assert.equal(state.sales[0].comisionEntidadPorcentaje, 2);
+  assert.equal(state.sales[0].comisionEntidadValor, 3708);
   assert.equal(state.customerCredits[0].monto, 500000);
   assert.equal(state.customerPayments[0].monto, 150000);
   assert.equal(state.customerPayments[0].metodoPago, "Nequi");

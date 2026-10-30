@@ -47,6 +47,31 @@ async function ensureSchema() {
       await conn.query("ALTER TABLE products ADD UNIQUE KEY uq_products_codigo_barras (codigo_barras)");
     }
 
+    const [saleCommissionColumn] = await conn.query("SHOW COLUMNS FROM sales LIKE 'comision_porcentaje'");
+    if (saleCommissionColumn.length === 0) {
+      await conn.query("ALTER TABLE sales ADD COLUMN comision_porcentaje DECIMAL(5,2) NULL");
+    }
+
+    const [saleCommissionValueColumn] = await conn.query("SHOW COLUMNS FROM sales LIKE 'comision_valor'");
+    if (saleCommissionValueColumn.length === 0) {
+      await conn.query("ALTER TABLE sales ADD COLUMN comision_valor DECIMAL(12,2) NOT NULL DEFAULT 0");
+    }
+
+    const [saleNetReceivedColumn] = await conn.query("SHOW COLUMNS FROM sales LIKE 'neto_recibido'");
+    if (saleNetReceivedColumn.length === 0) {
+      await conn.query("ALTER TABLE sales ADD COLUMN neto_recibido DECIMAL(12,2) NULL");
+    }
+
+    const [entityCommissionRateColumn] = await conn.query("SHOW COLUMNS FROM sales LIKE 'comision_entidad_porcentaje'");
+    if (entityCommissionRateColumn.length === 0) {
+      await conn.query("ALTER TABLE sales ADD COLUMN comision_entidad_porcentaje DECIMAL(5,2) NULL");
+    }
+
+    const [entityCommissionValueColumn] = await conn.query("SHOW COLUMNS FROM sales LIKE 'comision_entidad_valor'");
+    if (entityCommissionValueColumn.length === 0) {
+      await conn.query("ALTER TABLE sales ADD COLUMN comision_entidad_valor DECIMAL(12,2) NOT NULL DEFAULT 0");
+    }
+
     const [stockDeductedColumn] = await conn.query("SHOW COLUMNS FROM sale_items LIKE 'stock_descontado'");
     if (stockDeductedColumn.length === 0) {
       await conn.query("ALTER TABLE sale_items ADD COLUMN stock_descontado BOOLEAN NOT NULL DEFAULT TRUE");
