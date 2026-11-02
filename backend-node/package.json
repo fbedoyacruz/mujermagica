@@ -6,6 +6,7 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
+    "backup": "node backup.js",
     "test": "node --test services.test.js"
   },
   "dependencies": {

@@ -9,6 +9,7 @@
 !**/.env.example
 backup-mujer-magica-*.json
 mujer-magica-backup-*.json
+/Fuentes/backup diario/
 *.log
 Thumbs.db
 .DS_Store

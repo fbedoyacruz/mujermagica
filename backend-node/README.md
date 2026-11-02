@@ -87,6 +87,83 @@ anteriores: Alisado, Terapia capilar, Hidratacion, Henna y Lifting de pestanas.
    vacio significa desconocido, no cero: esa ganancia se excluye del indicador
    de ganancia conocida. Un costo cero explicito si participa en el calculo.
 
+## Cartera antigua
+
+- En **Punto de Venta > Cartera antigua**, selecciona un cliente registrado.
+   En su primer abono ingresa el saldo de la deuda anterior al sistema,
+   el abono recibido y una observacion opcional.
+- Agrega el abono al carrito y confirma el cobro. La deuda se registra solo
+   cuando se guarda correctamente; cancelar o retirar el abono no crea deuda.
+- En los siguientes abonos se carga el saldo pendiente del mismo cliente.
+   No se permite pagar mas que el saldo ni registrar el abono como venta a credito.
+- El cliente queda seleccionado para el comprobante. Se pueden incluir
+   productos y servicios del mismo cliente en el carrito; solo los productos
+   descuentan existencias. Los recargos del medio de pago no reducen la deuda.
+- La factura y el recibo termico incluyen saldo anterior, abono, saldo restante
+   y observacion. **Cartera** muestra tambien las deudas antiguas por cliente.
+- Los abonos se suman al ingreso del dia y del mes, separados en reportes
+   de productos y servicios; el capital recuperado no se cuenta como ganancia.
+- Anular el cobro exige el codigo de autorizacion existente y repone el saldo
+   abonado sin mover inventario por ese concepto.
+- Reinicia el backend despues de actualizar: se crean las tablas
+   `legacy_debts` y `sale_legacy_payments` sin modificar ventas anteriores.
+
+## Respaldo SQL diario a las 18:00
+
+El respaldo se guarda en `Fuentes/backup diario`, con fecha, hora y nombre
+unico. Incluye la estructura y los datos de MySQL, triggers, rutinas y eventos;
+no incluye imagenes de productos ni otros archivos del proyecto.
+No ejecuta restauraciones, no cambia tablas y no borra respaldos anteriores.
+
+1. Se requiere `mysqldump` y la configuracion MySQL del archivo `.env` del
+   backend. Se detecta MySQL Server 8.0 en su ruta habitual de Windows. Para
+   otra instalacion, configura `MYSQLDUMP_PATH` con la ruta del ejecutable,
+   sin incluir comillas como parte del valor.
+2. Desde PowerShell, en la raiz del proyecto, registra la tarea:
+   ```powershell
+   & .\backend-node\register-daily-backup.ps1
+   ```
+   Se crea `MujerMagica-BackupDiario-1800` para las 6:00 p. m. segun la hora
+   local de Windows, con permisos normales y la sesion del usuario actual.
+   No modifica una tarea existente que pertenezca a otra ruta.
+3. El equipo debe estar encendido, la sesion iniciada y MySQL disponible.
+   El backend y el navegador pueden estar cerrados. Si se pierde la hora,
+   la tarea solicita ejecucion cuando vuelva a estar disponible y reintenta
+   hasta tres veces si falla. No puede ejecutarse con el equipo apagado.
+4. Para generar ademas un respaldo manual:
+   ```powershell
+   npm --prefix backend-node run backup
+   ```
+5. Para revisar la programacion y el resultado (0 significa exito):
+   ```powershell
+   Get-ScheduledTaskInfo -TaskName 'MujerMagica-BackupDiario-1800'
+   ```
+
+El generador publica el archivo `.sql` solo si `mysqldump` termina con exito
+y el archivo tiene la marca de finalizacion. Los `.partial` fallidos se
+eliminan. Solo se crea un respaldo **diario** por fecha; los manuales son
+independientes. No se guarda la contrasena en los argumentos del proceso:
+se usa un archivo temporal privado y se elimina al terminar.
+
+Se utiliza un bloqueo global de lectura de MySQL mientras se realiza el dump
+para evitar cambios durante su lectura; puede hacer esperar brevemente a
+los guardados. El usuario MySQL necesita permisos para ese bloqueo y para
+leer los objetos incluidos. Una marca de finalizacion no sustituye una
+prueba de restauracion en una base de datos separada.
+
+**Privacidad:** los respaldos contienen datos sensibles. La carpeta se excluye
+de Git y se limita a la cuenta de Windows que ejecuta la tarea. No publiques
+`backup diario` por HTTP: un servidor estatico que sirva toda la carpeta
+`Fuentes` podria exponerlos aunque tengan permisos privados de Windows.
+El servidor frontend debe bloquear esa ruta; los permisos del sistema de
+archivos no bloquean un servidor que corre con tu misma cuenta.
+Conserva tambien una copia fuera de este equipo.
+
+Este respaldo no corrige el riesgo del guardado actual por reemplazo de tablas.
+No actualiza el backend en ejecucion ni aplica migraciones. Antes de una
+actualizacion, genera y comprueba un respaldo manual y evita guardados
+simultaneos; no restaures nunca sobre la base real para probar un respaldo.
+
 ## Pruebas
 
 Desde esta carpeta, ejecuta `npm test` (Node.js 18 o posterior). Las pruebas usan

@@ -82,6 +82,25 @@ CREATE TABLE IF NOT EXISTS sale_items (
   FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
+CREATE TABLE IF NOT EXISTS legacy_debts (
+  id VARCHAR(50) PRIMARY KEY,
+  customer_id VARCHAR(50) NOT NULL UNIQUE,
+  monto DECIMAL(12,2) NOT NULL,
+  fecha DATETIME NOT NULL
+) ENGINE=InnoDB;
+
+CREATE TABLE IF NOT EXISTS sale_legacy_payments (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  sale_id VARCHAR(50) NOT NULL,
+  debt_id VARCHAR(50) NOT NULL,
+  precio DECIMAL(12,2) NOT NULL,
+  saldo_anterior DECIMAL(12,2) NOT NULL,
+  saldo_posterior DECIMAL(12,2) NOT NULL,
+  observaciones VARCHAR(500),
+  UNIQUE KEY uq_sale_legacy_debt (sale_id, debt_id),
+  FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS services (
   id VARCHAR(50) PRIMARY KEY,
   nombre VARCHAR(150) NOT NULL,

@@ -3,10 +3,58 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
+const os = require("node:os");
+const { createBackup } = require("./backup");
 
 const html = fs.readFileSync(path.join(__dirname, "../Fuentes/sistema-completo.html"), "utf8");
 const script = [...html.matchAll(/<script\b[^>]*>([\s\S]*?)<\/script>/gi)].map(match => match[1]).filter(Boolean).join("\n");
 const serviceItem = { tipo: "servicio", serviceId: "service_1", nombre: "Alisado", cantidad: 1, precio: 180000, costo: 30000, observaciones: "Cabello largo" };
+
+test("respaldo diario genera SQL completo una sola vez sin exponer credenciales en argumentos", async context => {
+  const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pos-backup-test-"));
+  context.after(() => fs.promises.rm(directory, { recursive: true, force: true }));
+  let dumpCount = 0;
+  let credentialsFile;
+  const execFile = async (command, args) => {
+    if (command === "icacls.exe") return;
+    dumpCount++;
+    assert.equal(args.some(argument => argument.includes("FakePassword9")), false);
+    assert.ok(args.includes("--lock-all-tables"));
+    assert.ok(args[0].startsWith("--defaults-file="));
+    credentialsFile = args[0].slice("--defaults-file=".length);
+    assert.match(await fs.promises.readFile(credentialsFile, "utf8"), /password="FakePassword9"/);
+    const target = args.find(argument => argument.startsWith("--result-file=")).slice("--result-file=".length);
+    await fs.promises.writeFile(target, "-- MySQL dump\nCREATE TABLE ejemplo (id INT);\n-- Dump completed on 2026-11-02 18:00:00\n");
+  };
+  const options = { env: { DB_NAME: "test_pos", DB_PASSWORD: "FakePassword9" }, outputDirectory: directory, now: new Date(2026, 10, 2, 18, 0, 0), daily: true, execFile };
+  const first = await createBackup(options);
+  assert.equal(first.skipped, false);
+  assert.ok(first.bytes > 0);
+  assert.match(path.basename(first.file), /^test_pos-diario-2026-11-02_180000-.*\.sql$/);
+  assert.equal(fs.existsSync(credentialsFile), false);
+  const second = await createBackup(options);
+  assert.equal(second.skipped, true);
+  assert.equal(dumpCount, 1);
+  assert.equal((await fs.promises.readdir(directory)).length, 1);
+});
+
+test("respaldo fallido o incompleto no publica SQL parcial ni elimina respaldos anteriores", async context => {
+  for (const fail of [true, false]) {
+    const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), "pos-backup-fail-"));
+    context.after(() => fs.promises.rm(directory, { recursive: true, force: true }));
+    await fs.promises.writeFile(path.join(directory, "anterior.sql"), "Respaldo anterior");
+    let credentialsFile;
+    await assert.rejects(createBackup({ outputDirectory: directory, execFile: async (command, args) => {
+      if (command === "icacls.exe") return;
+      credentialsFile = args[0].slice("--defaults-file=".length);
+      const target = args.find(argument => argument.startsWith("--result-file=")).slice("--result-file=".length);
+      await fs.promises.writeFile(target, "SQL incompleto");
+      if (fail) throw new Error("Fallo simulado de mysqldump");
+    } }));
+    assert.equal(fs.existsSync(credentialsFile), false);
+    assert.deepEqual(await fs.promises.readdir(directory), ["anterior.sql"]);
+  }
+});
 
 function fixture() {
   return {
@@ -512,6 +560,12 @@ test("Cartera presenta saldo por cliente, factura y movimientos de abono", () =>
   assert.ok(cartera.includes(vm.runInContext("formatCurrency(350000)", app)));
   assert.ok(cartera.includes("Nequi"));
   assert.ok(vm.runInContext('flatRoutes().some(route => route.id === "cartera")', app));
+  const paymentHistory = cartera.slice(cartera.indexOf("Historial de abonos"));
+  assert.match(paymentHistory, /<button[^>]*data-sale-id="sale_1"[^>]*onclick="verFactura\(this\.dataset\.saleId\)"/);
+  state.sales = [];
+  const missingInvoiceHistory = app.renderCartera(state).split("Historial de abonos")[1];
+  assert.doesNotMatch(missingInvoiceHistory, /data-sale-id=/);
+  assert.match(missingInvoiceHistory, /sale_1/);
 });
 
 test("no se puede eliminar una venta a crédito que ya recibió abonos", async () => {
@@ -777,6 +831,158 @@ test("guardar sin quitar ventas no exige un código de autorización", async () 
   const state = fixture();
   state.sales = [{ id: "sale_1", fecha: "2026-10-30T12:00:00Z", total: 0, items: [] }];
   await backend({ getConnection: async () => conn }).replaceState(state);
+});
+
+test("POS agrega cartera antigua de clientes registrados al carrito sin alterar deuda ni stock", () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "Ana", documento: "123" }];
+  const elements = { posLegacyCustomer: { value: "customer_1" }, posLegacyBalance: { value: "100000" }, posLegacyPayment: { value: "20000" }, posLegacyNotes: { value: "Abono de noviembre" } };
+  const app = frontend(state, elements);
+  app.setPosTab("cartera_antigua");
+  app.selectLegacyCustomer("customer_1");
+  assert.match(app.renderPOS(state), /Agregar cartera antigua/);
+  assert.match(app.renderPOS(state), /Ana - 123/);
+  app.addLegacyPaymentToCart();
+  assert.equal(vm.runInContext("appState.cart[0].precio", app), 20000);
+  assert.equal(vm.runInContext("appState.cart[0].saldoPosterior", app), 80000);
+  assert.equal(state.products[0].stockActual, 10);
+  assert.equal((state.legacyDebts || []).length, 0);
+  app.updateCartQuantity(0, 3);
+  app.changeCartQuantity(0, 1);
+  assert.equal(vm.runInContext("appState.cart[0].cantidad", app), 1);
+  app.addLegacyPaymentToCart();
+  assert.equal(vm.runInContext("appState.cart.length", app), 1);
+  app.removeFromCart(0);
+  elements.posLegacyPayment.value = "100001";
+  app.addLegacyPaymentToCart();
+  assert.equal(vm.runInContext("appState.cart.length", app), 0);
+  elements.posLegacyPayment.value = "20000";
+  elements.posLegacyCustomer.value = "missing";
+  app.addLegacyPaymentToCart();
+  assert.equal(vm.runInContext("appState.cart.length", app), 0);
+});
+
+test("cobro de cartera antigua conserva saldo por cliente, genera factura e ingresos sin tocar inventario", async () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "Ana" }];
+  const elements = {
+    posLegacyCustomer: { value: "customer_1" }, posLegacyBalance: { value: "100000" }, posLegacyPayment: { value: "20000" }, posLegacyNotes: { value: "Deuda anterior" },
+    clienteSelect: { value: "customer_1" }, metodoSelect: { value: "Efectivo" },
+    modalContent: { innerHTML: "", appendChild: element => { elements.invoiceMarkup = element.innerHTML; } }, modalBackdrop: { classList: { add: () => {} } }, thermalPrintRoot: { innerHTML: "" }
+  };
+  const app = frontend(state, elements);
+  app.document.createElement = () => ({ innerHTML: "", className: "" });
+  vm.runInContext("saveDB = async () => true;", app);
+  app.addLegacyPaymentToCart();
+  await app.confirmarVenta();
+  assert.equal(state.legacyDebts.length, 1);
+  assert.equal(state.legacyDebts[0].monto, 100000);
+  assert.equal(app.getLegacyDebtBalance(state.legacyDebts[0]), 80000);
+  assert.equal(state.sales[0].total, 20000);
+  assert.equal(state.products[0].stockActual, 10);
+  app.verFactura(state.sales[0].id);
+  for (const markup of [elements.invoiceMarkup, elements.thermalPrintRoot.innerHTML]) {
+    assert.match(markup, /Ana/);
+    assert.match(markup, /Saldo anterior:/);
+    assert.match(markup, /Saldo restante:/);
+    assert.match(markup, /80\.000/);
+    assert.match(markup, /Deuda anterior/);
+  }
+  elements.posLegacyBalance.value = "999";
+  elements.posLegacyPayment.value = "30000";
+  app.addLegacyPaymentToCart();
+  await app.confirmarVenta();
+  assert.equal(state.legacyDebts.length, 1);
+  assert.equal(app.getLegacyDebtBalance(state.legacyDebts[0]), 50000);
+  assert.equal(state.sales[1].items[0].saldoAnterior, 80000);
+  const reloadedState = JSON.parse(JSON.stringify(state));
+  const reloaded = frontend(reloadedState);
+  reloaded.selectLegacyCustomer("customer_1");
+  assert.match(reloaded.renderLegacyDebtForm(reloadedState), /value="50000" readonly/);
+  const metrics = app.calcularMetricasGenerales(state.sales);
+  assert.equal(metrics.totalVentas, 50000);
+  assert.equal(metrics.ingresosCarteraAntigua, 50000);
+  assert.equal(metrics.ingresosProductos, 0);
+  assert.equal(metrics.gananciaBruta, 0);
+  assert.equal(app.ventasPorDia(state.sales)[0].total, 50000);
+  const month = state.sales[0].fecha.slice(0, 7);
+  assert.equal(app.filterSalesByPeriod(state.sales, month).length, 2);
+  assert.equal(app.productosMasVendidos(state.sales).length, 0);
+  assert.equal(app.ventasPorCategoria(state.sales).length, 0);
+  assert.match(app.renderCartera(state), /Cartera antigua/);
+  assert.match(app.renderCartera(state), /Abonar en POS/);
+  assert.match(app.renderCartera(state), /50\.000/);
+  const { app: deleteApp } = saleDeletionFrontend(state);
+  vm.runInContext("saveDB = async () => true;", deleteApp);
+  await deleteApp.eliminarVenta(state.sales[1].id);
+  await deleteApp.confirmarEliminarVenta(state.sales[1].id);
+  assert.equal(deleteApp.getLegacyDebtBalance(state.legacyDebts[0]), 80000);
+  assert.equal(state.products[0].stockActual, 10);
+});
+
+test("abono antiguo puede cobrarse con productos y servicios descontando solo productos", async () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "Ana" }];
+  const elements = { posLegacyCustomer: { value: "customer_1" }, posLegacyBalance: { value: "100000" }, posLegacyPayment: { value: "20000" }, posLegacyNotes: { value: "" }, clienteSelect: { value: "customer_1" }, metodoSelect: { value: "Efectivo" } };
+  const app = frontend(state, elements);
+  app.addLegacyPaymentToCart();
+  app.cartFixture = [{ productId: "product_1", cantidad: 1, precio: 20000 }, { ...serviceItem }];
+  vm.runInContext("appState.cart.push(...cartFixture); saveDB = async () => true;", app);
+  await app.confirmarVenta();
+  assert.equal(state.products[0].stockActual, 9);
+  assert.equal(state.sales[0].total, 220000);
+  assert.equal(app.getLegacyDebtBalance(state.legacyDebts[0]), 80000);
+  assert.equal(app.calcularMetricasGenerales(state.sales).gananciaBruta, 160000);
+});
+
+test("abono antiguo no admite crédito u otro cliente y un fallo no crea deuda ni reduce saldo", async () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "Ana" }, { id: "customer_2", nombre: "Luz" }];
+  const elements = { posLegacyCustomer: { value: "customer_1" }, posLegacyBalance: { value: "100000" }, posLegacyPayment: { value: "20000" }, posLegacyNotes: { value: "" }, clienteSelect: { value: "customer_2" }, metodoSelect: { value: "Efectivo" } };
+  const app = frontend(state, elements);
+  app.addLegacyPaymentToCart();
+  vm.runInContext("saveDB = async () => false;", app);
+  await app.confirmarVenta();
+  assert.equal(state.sales.length, 0);
+  elements.clienteSelect.value = "customer_1";
+  elements.metodoSelect.value = "Credito";
+  await app.confirmarVenta();
+  assert.equal(state.sales.length, 0);
+  elements.metodoSelect.value = "Efectivo";
+  await app.confirmarVenta();
+  assert.equal((state.legacyDebts || []).length, 0);
+  assert.equal(vm.runInContext("db.sales.length", app), 0);
+  assert.equal(vm.runInContext("appState.cart.length", app), 1);
+  assert.equal(state.products[0].stockActual, 10);
+  vm.runInContext("saveDB = async () => true;", app);
+  await app.confirmarVenta();
+  assert.equal(app.getLegacyDebtBalance(state.legacyDebts[0]), 80000);
+});
+
+test("cartera antigua persiste por cliente sin guardar abonos como productos", async () => {
+  const state = fixture();
+  state.customers = [{ id: "customer_1", nombre: "Ana" }];
+  state.legacyDebts = [{ id: "legacy_1", customerId: "customer_1", monto: 100000, fecha: "2026-11-02T12:00:00Z" }];
+  state.sales = [{ id: "sale_legacy", clienteId: "customer_1", metodoPago: "Efectivo", fecha: "2026-11-02T12:00:00Z", total: 20000, items: [{ tipo: "cartera_antigua", debtId: "legacy_1", cantidad: 1, precio: 20000, saldoAnterior: 100000, saldoPosterior: 80000, observaciones: "Abono anterior al sistema" }] }];
+  const queries = [];
+  const conn = { query: async (sql, values) => { queries.push({ sql, values }); return [[]]; }, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} };
+  const tables = {
+    customers: state.customers,
+    sales: state.sales.map(sale => ({ ...sale, items: undefined })),
+    legacy_debts: state.legacyDebts.map(debt => ({ ...debt, monto: "100000.00" })),
+    sale_legacy_payments: [{ saleId: "sale_legacy", debtId: "legacy_1", precio: "20000.00", saldoAnterior: "100000.00", saldoPosterior: "80000.00", observaciones: "Abono anterior al sistema" }]
+  };
+  const store = backend({ getConnection: async () => conn, query: async sql => [tables[/FROM (\w+)/.exec(sql)[1]] || []] });
+  await store.replaceState(state);
+  assert.equal(queries.filter(query => query.sql.startsWith("INSERT INTO sale_items ")).length, 0);
+  assert.deepEqual(Array.from(queries.find(query => query.sql.startsWith("INSERT INTO sale_legacy_payments ")).values), ["sale_legacy", "legacy_1", 20000, 100000, 80000, "Abono anterior al sistema"]);
+  const reloaded = await store.getState();
+  assert.equal(reloaded.legacyDebts[0].monto, 100000);
+  assert.equal(reloaded.sales[0].items[0].tipo, "cartera_antigua");
+  assert.equal(reloaded.sales[0].items[0].saldoPosterior, 80000);
+  assert.equal(reloaded.sales[0].items[0].customerId, "customer_1");
+  state.sales[0].items[0].precio = 120000;
+  await assert.rejects(store.replaceState(state), error => error.status === 400);
 });
 
 test("esquema de cartera y comisiones evita incompatibilidades con tablas antiguas", () => {

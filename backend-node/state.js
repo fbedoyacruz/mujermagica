@@ -22,6 +22,8 @@ async function getState() {
   );
   const [services] = await pool.query("SELECT id, nombre, precio_sugerido AS precioSugerido, costo_sugerido AS costoSugerido, activo FROM services");
   const [serviceItems] = await pool.query("SELECT sale_id AS saleId, service_id AS serviceId, nombre, cantidad, precio, costo, observaciones FROM sale_service_items");
+  const [legacyDebts] = await pool.query("SELECT id, customer_id AS customerId, monto, fecha FROM legacy_debts ORDER BY fecha");
+  const [legacyPayments] = await pool.query("SELECT sale_id AS saleId, debt_id AS debtId, precio, saldo_anterior AS saldoAnterior, saldo_posterior AS saldoPosterior, observaciones FROM sale_legacy_payments");
   const [purchases] = await pool.query(
     "SELECT id, fecha, proveedor_id AS proveedorId, iva, total, observaciones FROM purchases ORDER BY fecha"
   );
@@ -40,6 +42,11 @@ async function getState() {
   for (const item of serviceItems) {
     if (!itemsBySale.has(item.saleId)) itemsBySale.set(item.saleId, []);
     itemsBySale.get(item.saleId).push({ tipo: "servicio", serviceId: item.serviceId, nombre: item.nombre, cantidad: item.cantidad, precio: Number(item.precio), costo: item.costo == null ? null : Number(item.costo), observaciones: item.observaciones || "" });
+  }
+  for (const item of legacyPayments) {
+    if (!itemsBySale.has(item.saleId)) itemsBySale.set(item.saleId, []);
+    const debt = legacyDebts.find(entry => entry.id === item.debtId);
+    itemsBySale.get(item.saleId).push({ tipo: "cartera_antigua", debtId: item.debtId, customerId: debt?.customerId, nombre: "Abono cartera antigua", cantidad: 1, precio: Number(item.precio), saldoAnterior: Number(item.saldoAnterior), saldoPosterior: Number(item.saldoPosterior), observaciones: item.observaciones || "" });
   }
 
   const itemsByPurchase = new Map();
@@ -73,6 +80,7 @@ async function getState() {
     })),
     customerCredits: customerCredits.map(credit => ({ ...credit, monto: Number(credit.monto) })),
     customerPayments: customerPayments.map(payment => ({ ...payment, monto: Number(payment.monto) })),
+    legacyDebts: legacyDebts.map(debt => ({ ...debt, monto: Number(debt.monto) })),
     purchases: purchases.map(p => ({
       ...p,
       iva: Number(p.iva),
@@ -86,6 +94,25 @@ async function getState() {
 
 // Reemplaza todo el contenido de las tablas con el estado recibido (snapshot completo, igual que localStorage)
 async function replaceState(state, authorizationCode) {
+  const legacyDebtCustomers = new Set();
+  for (const debt of state.legacyDebts || []) {
+    const amount = Number(debt.monto);
+    const payments = (state.sales || []).flatMap(sale => (sale.items || []).filter(item => item.tipo === "cartera_antigua" && item.debtId === debt.id));
+    if (legacyDebtCustomers.has(debt.customerId) || !(state.customers || []).some(customer => customer.id === debt.customerId) || !Number.isFinite(amount) || amount <= 0 || amount > 9999999999.99 || payments.reduce((sum, item) => sum + Number(item.precio), 0) > amount + 0.001) {
+      throw Object.assign(new Error("La cartera antigua tiene un cliente, saldo o abono inválido."), { status: 400 });
+    }
+    legacyDebtCustomers.add(debt.customerId);
+  }
+  for (const sale of state.sales || []) {
+    const paidDebts = new Set();
+    for (const item of (sale.items || []).filter(entry => entry.tipo === "cartera_antigua")) {
+      const debt = (state.legacyDebts || []).find(entry => entry.id === item.debtId);
+      if (!debt || paidDebts.has(item.debtId) || sale.clienteId !== debt.customerId || sale.metodoPago === "Credito" || item.cantidad !== 1 || !Number.isFinite(Number(item.precio)) || Number(item.precio) <= 0 || !Number.isFinite(Number(item.saldoAnterior)) || !Number.isFinite(Number(item.saldoPosterior)) || Number(item.saldoPosterior) < 0 || Math.abs(Number(item.saldoAnterior) - Number(item.saldoPosterior) - Number(item.precio)) > 0.001) {
+        throw Object.assign(new Error("El abono de cartera antigua no es válido."), { status: 400 });
+      }
+      paidDebts.add(item.debtId);
+    }
+  }
   const conn = await pool.getConnection();
   try {
     await conn.beginTransaction();
@@ -106,6 +133,8 @@ async function replaceState(state, authorizationCode) {
     await conn.query("SET FOREIGN_KEY_CHECKS = 0");
 
     await conn.query("DELETE FROM sale_service_items");
+    await conn.query("DELETE FROM sale_legacy_payments");
+    await conn.query("DELETE FROM legacy_debts");
     await conn.query("DELETE FROM customer_payments");
     await conn.query("DELETE FROM customer_credits");
     await conn.query("DELETE FROM services");
@@ -143,11 +172,19 @@ async function replaceState(state, authorizationCode) {
       ]);
     }
 
+    for (const debt of state.legacyDebts || []) {
+      await conn.query("INSERT INTO legacy_debts (id, customer_id, monto, fecha) VALUES (?, ?, ?, ?)", [debt.id, debt.customerId, debt.monto, new Date(debt.fecha)]);
+    }
+
     for (const s of state.sales || []) {
       await conn.query("INSERT INTO sales (id, fecha, cliente_id, subtotal, iva, total, metodo_pago, comision_porcentaje, comision_valor, neto_recibido, comision_entidad_porcentaje, comision_entidad_valor) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
         s.id, new Date(s.fecha), s.clienteId || null, s.subtotal || 0, s.iva || 0, s.total || 0, s.metodoPago || null, s.comisionPorcentaje ?? null, s.comisionValor || 0, s.netoRecibido ?? s.total ?? 0, s.comisionEntidadPorcentaje ?? (s.metodoPago === "QR" ? s.comisionPorcentaje ?? null : null), s.comisionEntidadValor ?? (s.metodoPago === "QR" ? s.comisionValor || 0 : 0)
       ]);
       for (const item of s.items || []) {
+        if (item.tipo === "cartera_antigua") {
+          await conn.query("INSERT INTO sale_legacy_payments (sale_id, debt_id, precio, saldo_anterior, saldo_posterior, observaciones) VALUES (?, ?, ?, ?, ?, ?)", [s.id, item.debtId, item.precio, item.saldoAnterior, item.saldoPosterior, item.observaciones || null]);
+          continue;
+        }
         if (item.tipo === "servicio") {
           await conn.query("INSERT INTO sale_service_items (sale_id, service_id, nombre, cantidad, precio, costo, observaciones) VALUES (?, ?, ?, ?, ?, ?, ?)", [
             s.id, item.serviceId, item.nombre, item.cantidad, item.precio, item.costo ?? null, item.observaciones || null

@@ -187,6 +187,7 @@
         const state = await res.json();
         state.customerCredits = Array.isArray(state.customerCredits) ? state.customerCredits : [];
         state.customerPayments = Array.isArray(state.customerPayments) ? state.customerPayments : [];
+        state.legacyDebts = Array.isArray(state.legacyDebts) ? state.legacyDebts : [];
         return state;
       } catch (e) {
         console.error("Error cargando BD desde MySQL:", e);
@@ -322,6 +323,7 @@
       posTab: "productos",
       servicesTab: "catalogo",
       selectedPosServiceId: "",
+      legacyCustomerId: "",
       posBrandFilter: "",
       posCategoryFilter: "",
       historyMode: "all",
@@ -474,27 +476,28 @@
     function calcularMetricasGenerales(sales) {
       const totalVentas = sales.reduce((s, sale) => s + sale.total, 0);
       const items = sales.flatMap(sale => sale.items);
-      const productos = items.filter(item => item.tipo !== "servicio");
+      const productos = items.filter(item => item.tipo !== "servicio" && item.tipo !== "cartera_antigua");
       const servicios = items.filter(item => item.tipo === "servicio");
+      const ingresosCarteraAntigua = items.filter(item => item.tipo === "cartera_antigua").reduce((sum, item) => sum + item.precio, 0);
       const ingresosProductos = productos.reduce((sum, item) => sum + item.cantidad * item.precio, 0);
       const ingresosServicios = servicios.reduce((sum, item) => sum + item.cantidad * item.precio, 0);
       const totalCostoProductos = productos.reduce((sum, item) => sum + item.cantidad * (db.products.find(product => product.id === item.productId)?.precioCompra ?? 0), 0);
       const totalCosto = totalCostoProductos + servicios.reduce((sum, item) => sum + item.cantidad * (item.costo ?? 0), 0);
       const serviciosSinCosto = servicios.filter(item => item.costo == null).reduce((sum, item) => sum + item.cantidad, 0);
       const ingresosSinCosto = servicios.filter(item => item.costo == null).reduce((sum, item) => sum + item.cantidad * item.precio, 0);
-      const gananciaBruta = totalVentas - totalCosto - ingresosSinCosto;
-      const ingresosConCosto = totalVentas - ingresosSinCosto;
+      const gananciaBruta = totalVentas - totalCosto - ingresosSinCosto - ingresosCarteraAntigua;
+      const ingresosConCosto = totalVentas - ingresosSinCosto - ingresosCarteraAntigua;
       const margenPromedio = ingresosConCosto > 0 ? (gananciaBruta / ingresosConCosto) * 100 : 0;
       const cantVentas = sales.length;
       const ventaPromedio = cantVentas > 0 ? totalVentas / cantVentas : 0;
-      return { totalVentas, totalCosto, totalCostoProductos, ingresosProductos, ingresosServicios, serviciosSinCosto, gananciaBruta, margenPromedio, cantVentas, ventaPromedio };
+      return { totalVentas, totalCosto, totalCostoProductos, ingresosProductos, ingresosServicios, ingresosCarteraAntigua, serviciosSinCosto, gananciaBruta, margenPromedio, cantVentas, ventaPromedio };
     }
 
     function productosMasVendidos(sales, limite = 5) {
       const productMap = {};
       sales.forEach(sale => {
         sale.items.forEach(item => {
-          if (item.tipo === "servicio") return;
+          if (item.tipo === "servicio" || item.tipo === "cartera_antigua") return;
           if (!productMap[item.productId]) productMap[item.productId] = { cantidad: 0, ventas: 0, costo: 0 };
           productMap[item.productId].cantidad += item.cantidad;
           productMap[item.productId].ventas += item.cantidad * item.precio;
@@ -833,8 +836,8 @@
       const customerIndex = db.customers.findIndex(customer => customer.id === customerId);
       if (customerIndex === -1) return;
       const customer = db.customers[customerIndex];
-      if (db.sales.some(sale => sale.clienteId === customerId)) {
-        showToast("No se puede eliminar: el cliente tiene ventas asociadas. Se conserva para proteger el historial.", "warning");
+      if (db.sales.some(sale => sale.clienteId === customerId) || (db.legacyDebts || []).some(debt => debt.customerId === customerId)) {
+        showToast("No se puede eliminar: el cliente tiene ventas o cartera asociada. Se conserva para proteger el historial.", "warning");
         return;
       }
       if (!confirm(`¿Eliminar el cliente ${customer.nombre}? Esta acción no se puede deshacer.`)) return;
@@ -1146,11 +1149,55 @@
       renderView();
     }
 
+    function getLegacyDebtBalance(debt, state = db) {
+      const paid = state.sales.flatMap(sale => sale.items).filter(item => item.tipo === "cartera_antigua" && item.debtId === debt.id).reduce((sum, item) => sum + Number(item.precio), 0);
+      return Math.max(0, Number((Number(debt.monto) - paid).toFixed(2)));
+    }
+
+    function selectLegacyCustomer(customerId) {
+      appState.legacyCustomerId = customerId;
+      renderView();
+    }
+
+    function openLegacyCustomer(customerId) {
+      appState.legacyCustomerId = customerId;
+      appState.posTab = "cartera_antigua";
+      cambiarRuta("pos");
+    }
+
+    function renderLegacyDebtForm(st) {
+      const debt = (st.legacyDebts || []).find(entry => entry.customerId === appState.legacyCustomerId);
+      const balance = debt ? getLegacyDebtBalance(debt, st) : null;
+      const history = st.sales.flatMap(sale => sale.items.filter(item => item.tipo === "cartera_antigua" && item.customerId === appState.legacyCustomerId).map(item => ({ sale, item })));
+      return `<div class="flex flex-wrap justify-between items-center gap-3 mb-4"><h3 class="text-lg font-bold">Agregar cartera antigua</h3><button type="button" onclick="cambiarRuta('clientes')" class="text-sm font-semibold text-teal-700">Clientes</button></div>
+        <form onsubmit="event.preventDefault(); addLegacyPaymentToCart()" class="grid grid-cols-1 gap-3 md:grid-cols-2">
+          <div class="md:col-span-2"><label for="posLegacyCustomer" class="block text-sm font-semibold mb-1">Cliente</label><select id="posLegacyCustomer" required onchange="selectLegacyCustomer(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Selecciona un cliente</option>${st.customers.map(customer => `<option value="${escapeHtml(customer.id)}" ${customer.id === appState.legacyCustomerId ? "selected" : ""}>${escapeHtml(customer.nombre)}${customer.documento ? ` - ${escapeHtml(customer.documento)}` : ""}</option>`).join("")}</select></div>
+          <div><label for="posLegacyBalance" class="block text-sm font-semibold mb-1">Saldo actual de la deuda</label><input id="posLegacyBalance" type="number" min="0" max="9999999999.99" step="0.01" required value="${balance ?? ""}" ${debt ? "readonly" : ""} class="w-full rounded-lg border px-3 py-2 text-sm" /></div>
+          <div><label for="posLegacyPayment" class="block text-sm font-semibold mb-1">Valor del abono</label><input id="posLegacyPayment" type="number" min="0.01" max="${balance ?? 9999999999.99}" step="0.01" required class="w-full rounded-lg border px-3 py-2 text-sm" /></div>
+          <div class="md:col-span-2"><label for="posLegacyNotes" class="block text-sm font-semibold mb-1">Observación</label><textarea id="posLegacyNotes" maxlength="500" rows="2" class="w-full rounded-lg border px-3 py-2 text-sm"></textarea></div>
+          <div class="md:col-span-2"><button type="submit" ${balance === 0 || !st.customers.length ? "disabled" : ""} class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">Agregar abono al carrito</button>${balance === 0 ? '<span class="ml-3 text-sm text-teal-700">Deuda saldada</span>' : ""}</div>
+        </form>
+        ${history.length ? `<div class="mt-5 border-t pt-4"><h4 class="font-semibold mb-2">Abonos registrados</h4><div class="overflow-x-auto"><table class="min-w-full text-sm"><thead><tr><th class="p-2 text-left">Fecha</th><th class="p-2 text-right">Abono</th><th class="p-2 text-right">Saldo restante</th><th class="p-2">Factura</th></tr></thead><tbody>${history.map(({ sale, item }) => `<tr class="border-t"><td class="p-2">${formatDate(sale.fecha)}</td><td class="p-2 text-right">${formatCurrency(item.precio)}</td><td class="p-2 text-right">${formatCurrency(item.saldoPosterior)}</td><td class="p-2 text-center"><button type="button" data-sale-id="${escapeHtml(sale.id)}" onclick="verFactura(this.dataset.saleId)" class="text-teal-700 font-semibold">Ver</button></td></tr>`).join("")}</tbody></table></div></div>` : ""}`;
+    }
+
+    function addLegacyPaymentToCart() {
+      const customer = db.customers.find(entry => entry.id === document.getElementById("posLegacyCustomer")?.value);
+      const debt = (db.legacyDebts || []).find(entry => entry.customerId === customer?.id);
+      const balance = debt ? getLegacyDebtBalance(debt) : Number(document.getElementById("posLegacyBalance")?.value);
+      const amount = Number(document.getElementById("posLegacyPayment")?.value);
+      if (!customer) return showToast("Selecciona un cliente registrado", "warning");
+      if (!Number.isFinite(balance) || balance <= 0 || balance > 9999999999.99 || !Number.isFinite(amount) || amount <= 0 || amount > balance) return showToast("El abono debe ser mayor que cero y no superar el saldo de la deuda", "warning");
+      if (appState.cart.some(item => item.tipo === "cartera_antigua")) return showToast("El carrito ya tiene un abono de cartera antigua. Confírmalo o retíralo primero.", "warning");
+      appState.cart.push({ tipo: "cartera_antigua", debtId: debt?.id || uid("legacy"), customerId: customer.id, nombre: `Abono cartera antigua - ${customer.nombre}`, cantidad: 1, precio: Number(amount.toFixed(2)), montoInicial: debt?.monto ?? Number(balance.toFixed(2)), saldoAnterior: balance, saldoPosterior: Number((balance - amount).toFixed(2)), observaciones: document.getElementById("posLegacyNotes")?.value.trim() || "" });
+      updateCartBadge();
+      renderView();
+    }
+
     function setPosTab(tab) {
-      if (!["productos", "servicios", "mayorista"].includes(tab)) return;
+      if (!["productos", "servicios", "mayorista", "cartera_antigua"].includes(tab)) return;
       appState.posTab = tab;
       renderView();
-      if (tab !== "servicios") focusBarcodeScanner();
+      if (["productos", "mayorista"].includes(tab)) focusBarcodeScanner();
     }
 
     function setHistoryMode(mode) {
@@ -1216,9 +1263,9 @@
         return !criteria || searchable.includes(criteria);
       }).sort((a, b) => new Date(b.fecha) - new Date(a.fecha));
 
-      const totalCartera = (st.customerCredits || []).reduce((total, credit) => total + getCreditBalance(credit, st), 0);
-      const customerIdsWithBalance = new Set((st.customerCredits || []).filter(credit => getCreditBalance(credit, st) > 0).map(credit => credit.customerId));
-      const totalAbonos = (st.customerPayments || []).reduce((total, payment) => total + Number(payment.monto || 0), 0);
+      const totalCartera = (st.customerCredits || []).reduce((total, credit) => total + getCreditBalance(credit, st), 0) + (st.legacyDebts || []).reduce((total, debt) => total + getLegacyDebtBalance(debt, st), 0);
+      const customerIdsWithBalance = new Set([...(st.customerCredits || []).filter(credit => getCreditBalance(credit, st) > 0).map(credit => credit.customerId), ...(st.legacyDebts || []).filter(debt => getLegacyDebtBalance(debt, st) > 0).map(debt => debt.customerId)]);
+      const totalAbonos = (st.customerPayments || []).reduce((total, payment) => total + Number(payment.monto || 0), 0) + st.sales.flatMap(sale => sale.items).filter(item => item.tipo === "cartera_antigua").reduce((total, item) => total + Number(item.precio), 0);
       const customerOptions = [
         `<option value="" ${!selectedCustomerId ? "selected" : ""}>Todos los clientes</option>`,
         ...st.customers.map(customer => `<option value="${escapeHtml(customer.id)}" ${customer.id === selectedCustomerId ? "selected" : ""}>${escapeHtml(customer.nombre)} · ${escapeHtml(customer.documento || "Sin documento")}</option>`)
@@ -1228,10 +1275,12 @@
       const visibleCreditIds = new Set(credits.map(credit => credit.id));
       const paymentRows = (st.customerPayments || []).filter(payment => visibleCreditIds.has(payment.creditId)).sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(payment => {
         const credit = credits.find(entry => entry.id === payment.creditId);
-        return `<tr class="border-b text-sm"><td class="px-3 py-2">${formatDate(payment.fecha)}</td><td class="px-3 py-2 font-semibold">${escapeHtml(credit?.customer.nombre || "Cliente")}</td><td class="px-3 py-2">${escapeHtml(credit?.saleId || "-")}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(payment.monto)}</td><td class="px-3 py-2">${escapeHtml(payment.metodoPago || "-")}</td><td class="px-3 py-2">${escapeHtml(payment.observaciones || "-")}</td></tr>`;
+        return `<tr class="border-b text-sm"><td class="px-3 py-2">${formatDate(payment.fecha)}</td><td class="px-3 py-2 font-semibold">${escapeHtml(credit?.customer.nombre || "Cliente")}</td><td class="px-3 py-2">${credit?.sale ? `<button type="button" data-sale-id="${escapeHtml(credit.saleId)}" onclick="verFactura(this.dataset.saleId)" class="font-semibold text-teal-700">${escapeHtml(credit.saleId)}</button>` : escapeHtml(credit?.saleId || "-")}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(payment.monto)}</td><td class="px-3 py-2">${escapeHtml(payment.metodoPago || "-")}</td><td class="px-3 py-2">${escapeHtml(payment.observaciones || "-")}</td></tr>`;
       }).join("");
 
-      return `<div class="space-y-4"><div class="view-card"><div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 class="text-lg font-bold">Cartera de clientes</h2><p class="text-sm text-slate-500">Créditos pendientes y abonos registrados</p></div><div><label for="carteraCustomer" class="mb-1 block text-sm font-semibold">Cliente</label><select id="carteraCustomer" onchange="setCarteraCustomer(this.value)" class="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-72">${customerOptions}</select></div></div></div><div class="grid grid-cols-1 gap-3 sm:grid-cols-3"><div class="kpi-card"><p class="text-xs uppercase text-slate-500">Saldo de cartera</p><p class="mt-2 text-xl font-bold">${formatCurrency(totalCartera)}</p></div><div class="kpi-card"><p class="text-xs uppercase text-slate-500">Clientes con saldo</p><p class="mt-2 text-xl font-bold">${customerIdsWithBalance.size}</p></div><div class="kpi-card"><p class="text-xs uppercase text-slate-500">Abonos registrados</p><p class="mt-2 text-xl font-bold">${formatCurrency(totalAbonos)}</p></div></div><section class="view-card"><h3 class="mb-3 text-base font-bold">Créditos por factura</h3><div class="overflow-x-auto rounded-lg border"><table class="min-w-full"><thead class="border-b bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-left">Factura</th><th class="px-3 py-2 text-right">Crédito</th><th class="px-3 py-2 text-right">Abonado</th><th class="px-3 py-2 text-right">Saldo</th><th class="px-3 py-2 text-center">Acción</th></tr></thead><tbody>${creditRows || '<tr><td colspan="7" class="px-3 py-6 text-center text-sm text-slate-500">No hay créditos para mostrar</td></tr>'}</tbody></table></div></section><section class="view-card"><h3 class="mb-3 text-base font-bold">Historial de abonos</h3><div class="overflow-x-auto rounded-lg border"><table class="min-w-full"><thead class="border-b bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-left">Factura</th><th class="px-3 py-2 text-right">Abono</th><th class="px-3 py-2 text-left">Método</th><th class="px-3 py-2 text-left">Observaciones</th></tr></thead><tbody>${paymentRows || '<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500">Aún no hay abonos registrados</td></tr>'}</tbody></table></div></section></div>`;
+      const legacyRows = (st.legacyDebts || []).map(debt => ({ debt, customer: st.customers.find(customer => customer.id === debt.customerId), saldo: getLegacyDebtBalance(debt, st) })).filter(({ debt, customer }) => (!selectedCustomerId || debt.customerId === selectedCustomerId) && `${customer?.nombre || ""} ${customer?.documento || ""}`.toLowerCase().includes(search.toLowerCase())).map(({ debt, customer, saldo }) => `<tr class="border-b text-sm"><td class="px-3 py-2 font-semibold">${escapeHtml(customer?.nombre || "Cliente")}</td><td class="px-3 py-2 text-right">${formatCurrency(debt.monto)}</td><td class="px-3 py-2 text-right">${formatCurrency(debt.monto - saldo)}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(saldo)}</td><td class="px-3 py-2 text-center"><button type="button" data-customer-id="${escapeHtml(debt.customerId)}" onclick="openLegacyCustomer(this.dataset.customerId)" class="font-semibold text-teal-700">${saldo > 0 ? "Abonar en POS" : "Ver historial"}</button></td></tr>`).join("");
+      const legacySection = `<section class="border-t py-4"><h3 class="mb-3 text-base font-bold">Cartera antigua</h3><div class="overflow-x-auto rounded-lg border"><table class="min-w-full"><thead class="border-b bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-right">Deuda inicial</th><th class="px-3 py-2 text-right">Abonado</th><th class="px-3 py-2 text-right">Saldo</th><th class="px-3 py-2">Acción</th></tr></thead><tbody>${legacyRows || '<tr><td colspan="5" class="p-4 text-center text-sm text-slate-500">Sin cartera antigua registrada</td></tr>'}</tbody></table></div></section>`;
+      return `<div class="space-y-4"><div class="view-card"><div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 class="text-lg font-bold">Cartera de clientes</h2><p class="text-sm text-slate-500">Créditos pendientes y abonos registrados</p></div><div><label for="carteraCustomer" class="mb-1 block text-sm font-semibold">Cliente</label><select id="carteraCustomer" onchange="setCarteraCustomer(this.value)" class="w-full rounded-lg border bg-white px-3 py-2 text-sm sm:w-72">${customerOptions}</select></div></div></div><div class="grid grid-cols-1 gap-3 sm:grid-cols-3"><div class="kpi-card"><p class="text-xs uppercase text-slate-500">Saldo de cartera</p><p class="mt-2 text-xl font-bold">${formatCurrency(totalCartera)}</p></div><div class="kpi-card"><p class="text-xs uppercase text-slate-500">Clientes con saldo</p><p class="mt-2 text-xl font-bold">${customerIdsWithBalance.size}</p></div><div class="kpi-card"><p class="text-xs uppercase text-slate-500">Abonos registrados</p><p class="mt-2 text-xl font-bold">${formatCurrency(totalAbonos)}</p></div></div>${legacySection}<section class="view-card"><h3 class="mb-3 text-base font-bold">Créditos por factura</h3><div class="overflow-x-auto rounded-lg border"><table class="min-w-full"><thead class="border-b bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-left">Factura</th><th class="px-3 py-2 text-right">Crédito</th><th class="px-3 py-2 text-right">Abonado</th><th class="px-3 py-2 text-right">Saldo</th><th class="px-3 py-2 text-center">Acción</th></tr></thead><tbody>${creditRows || '<tr><td colspan="7" class="px-3 py-6 text-center text-sm text-slate-500">No hay créditos para mostrar</td></tr>'}</tbody></table></div></section><section class="view-card"><h3 class="mb-3 text-base font-bold">Historial de abonos</h3><div class="overflow-x-auto rounded-lg border"><table class="min-w-full"><thead class="border-b bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Fecha</th><th class="px-3 py-2 text-left">Cliente</th><th class="px-3 py-2 text-left">Factura</th><th class="px-3 py-2 text-right">Abono</th><th class="px-3 py-2 text-left">Método</th><th class="px-3 py-2 text-left">Observaciones</th></tr></thead><tbody>${paymentRows || '<tr><td colspan="6" class="px-3 py-6 text-center text-sm text-slate-500">Aún no hay abonos registrados</td></tr>'}</tbody></table></div></section></div>`;
     }
 
     async function registrarAbono(creditId, monto, metodoPago, observaciones = "") {
@@ -1380,7 +1429,7 @@
       db.sales.splice(saleIndex, 1);
       db.customerCredits = creditsBefore.filter(credit => credit.saleId !== saleId);
       for (const item of sale.items || []) {
-        if (item.tipo === "servicio" || item.stockDescontado === false) continue;
+        if (item.tipo === "servicio" || item.tipo === "cartera_antigua" || item.stockDescontado === false) continue;
         const product = db.products.find(entry => entry.id === item.productId);
         if (product) product.stockActual += item.cantidad;
       }
@@ -1466,10 +1515,10 @@
         <div class="bg-white p-3 rounded-lg border space-y-2">
           <div>
             <p class="font-semibold text-sm break-words">${escapeHtml(item.nombre)}</p>
-            <p class="text-xs text-slate-500">${formatCurrency(item.precio)} c/u${item.tipo === "servicio" ? "" : ` · ${item.tipoPrecio === "mayorista" ? "Por mayor" : "Al detal"}`}</p>
+            <p class="text-xs text-slate-500">${formatCurrency(item.precio)}${item.tipo === "cartera_antigua" ? ` · Saldo restante: ${formatCurrency(item.saldoPosterior)}` : ` c/u${item.tipo === "servicio" ? "" : ` · ${item.tipoPrecio === "mayorista" ? "Por mayor" : "Al detal"}`}`}</p>
             ${item.tipo === "servicio" ? `<p class="text-xs text-slate-500 break-words">Servicio${item.observaciones ? `: ${escapeHtml(item.observaciones)}` : ""}</p><button type="button" onclick="showServiceSaleModal(null, ${idx})" class="text-xs font-semibold text-teal-700">Editar precio y detalles</button>` : ""}
           </div>
-          <div class="flex items-center gap-2">
+          <div class="${item.tipo === "cartera_antigua" ? "hidden" : "flex"} items-center gap-2">
             <button onclick="changeCartQuantity(${idx}, -1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold">−</button>
             <input type="number" id="cart-qty-${idx}" value="${item.cantidad}" min="1" class="flex-1 px-2 py-1 border border-slate-300 rounded text-center text-xs font-semibold" onchange="updateCartQuantity(${idx}, this.value)" />
             <button onclick="changeCartQuantity(${idx}, 1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold">+</button>
@@ -1499,13 +1548,13 @@
         ? `No hay productos para ${activeFilters.join(" y ")}.`
         : "No hay productos disponibles con ese criterio.";
       const serviceOptions = (st.services || []).filter(service => service.activo !== false && service.nombre.toLowerCase().includes(criteria)).map(service => `<option value="${escapeHtml(service.id)}" data-price="${service.precioSugerido ?? ""}" data-cost="${service.costoSugerido ?? ""}" ${service.id === appState.selectedPosServiceId ? "selected" : ""}>${escapeHtml(service.nombre)}${service.precioSugerido == null ? " · Precio variable" : ` · ${formatCurrency(service.precioSugerido)}`}</option>`).join("");
-      const barcodeScanner = appState.posTab === "servicios" ? "" : `<div class="view-card mb-4"><label for="barcodeScannerInput" class="mb-1 block text-sm font-semibold">Escanear producto</label><div class="flex gap-2"><input id="barcodeScannerInput" type="text" inputmode="none" autocomplete="off" spellcheck="false" placeholder="Escanea el código de barras y presiona Enter" onkeydown="handleBarcodeScanner(event)" class="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm font-mono" /><button type="button" onclick="procesarCodigoBarras()" class="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white">Agregar</button></div><p class="mt-1 text-xs text-slate-500">El escáner debe enviar Enter al terminar la lectura.</p></div>`;
-      const tabs = `<div role="tablist" aria-label="Tipo de venta" class="flex border-b mb-4"><button type="button" role="tab" aria-selected="${appState.posTab === "productos"}" onclick="setPosTab('productos')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "productos" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Productos</button><button type="button" role="tab" aria-selected="${appState.posTab === "servicios"}" onclick="setPosTab('servicios')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "servicios" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Servicios</button><button type="button" role="tab" aria-selected="${appState.posTab === "mayorista"}" onclick="setPosTab('mayorista')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === "mayorista" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">Por mayor</button></div>`;
+      const barcodeScanner = ["servicios", "cartera_antigua"].includes(appState.posTab) ? "" : `<div class="view-card mb-4"><label for="barcodeScannerInput" class="mb-1 block text-sm font-semibold">Escanear producto</label><div class="flex gap-2"><input id="barcodeScannerInput" type="text" inputmode="none" autocomplete="off" spellcheck="false" placeholder="Escanea el código de barras y presiona Enter" onkeydown="handleBarcodeScanner(event)" class="min-w-0 flex-1 rounded-lg border px-3 py-2 text-sm font-mono" /><button type="button" onclick="procesarCodigoBarras()" class="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white">Agregar</button></div><p class="mt-1 text-xs text-slate-500">El escáner debe enviar Enter al terminar la lectura.</p></div>`;
+      const tabs = `<div role="tablist" aria-label="Tipo de venta" class="flex flex-wrap border-b mb-4">${[["productos", "Productos"], ["servicios", "Servicios"], ["mayorista", "Por mayor"], ["cartera_antigua", "Cartera antigua"]].map(([tab, label]) => `<button type="button" role="tab" aria-selected="${appState.posTab === tab}" onclick="setPosTab('${tab}')" class="px-4 py-2 text-sm font-semibold ${appState.posTab === tab ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}">${label}</button>`).join("")}</div>`;
 
       return `
         ${barcodeScanner}
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
-          <div class="xl:col-span-2"><div class="view-card">${tabs}${appState.posTab === "servicios" ? `<div class="flex flex-wrap justify-between items-center gap-3 mb-4"><div><h3 class="text-lg font-bold">Agregar servicio</h3><p class="text-sm text-slate-500">Elige un procedimiento y registra su valor acordado.</p></div><button type="button" onclick="cambiarRuta('servicios')" class="text-sm font-semibold text-teal-700">Administrar cat&aacute;logo</button></div>${serviceOptions ? `<div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div class="md:col-span-2"><label for="posServiceSelect" class="block text-xs font-semibold text-slate-500 mb-1">Procedimiento</label><select id="posServiceSelect" onchange="onPosServiceSelected(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Selecciona un servicio</option>${serviceOptions}</select></div><div><label for="posServicePrice" class="block text-xs font-semibold text-slate-500 mb-1">Valor del servicio</label><input id="posServicePrice" type="number" min="0.01" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.precioSugerido ?? ""}" placeholder="Ingresa el valor acordado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div><label for="posServiceCost" class="block text-xs font-semibold text-slate-500 mb-1">Costo directo (opcional)</label><input id="posServiceCost" type="number" min="0" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.costoSugerido ?? ""}" placeholder="Costo de insumos" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><label for="posServiceNotes" class="block text-xs font-semibold text-slate-500 mb-1">Observaciones del procedimiento (opcional)</label><input id="posServiceNotes" type="text" maxlength="500" placeholder="Ej.: cabello largo, tono aplicado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><button type="button" onclick="addSelectedServiceToCart()" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Agregar servicio al carrito</button></div></div>` : '<p class="text-sm text-slate-500">No hay servicios disponibles con ese criterio.</p>'}` : `<div class="flex flex-col gap-3 mb-3"><h3 class="text-lg font-bold">🛍️ Productos disponibles</h3><div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div><label for="posBrandFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por marca</label><select id="posBrandFilter" onchange="setPosBrandFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${brandOptions}</select></div><div><label for="posCategoryFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por categoría</label><select id="posCategoryFilter" onchange="setPosCategoryFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${categoryOptions}</select></div></div></div><div class="grid grid-cols-2 md:grid-cols-3 gap-3">${cards || `<div class="col-span-2 md:col-span-3 rounded-lg border border-dashed p-4 text-sm text-slate-500 text-center">${emptyMessage}</div>`}</div>`}</div></div>
+          <div class="xl:col-span-2"><div class="view-card">${tabs}${appState.posTab === "cartera_antigua" ? renderLegacyDebtForm(st) : appState.posTab === "servicios" ? `<div class="flex flex-wrap justify-between items-center gap-3 mb-4"><div><h3 class="text-lg font-bold">Agregar servicio</h3><p class="text-sm text-slate-500">Elige un procedimiento y registra su valor acordado.</p></div><button type="button" onclick="cambiarRuta('servicios')" class="text-sm font-semibold text-teal-700">Administrar cat&aacute;logo</button></div>${serviceOptions ? `<div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div class="md:col-span-2"><label for="posServiceSelect" class="block text-xs font-semibold text-slate-500 mb-1">Procedimiento</label><select id="posServiceSelect" onchange="onPosServiceSelected(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Selecciona un servicio</option>${serviceOptions}</select></div><div><label for="posServicePrice" class="block text-xs font-semibold text-slate-500 mb-1">Valor del servicio</label><input id="posServicePrice" type="number" min="0.01" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.precioSugerido ?? ""}" placeholder="Ingresa el valor acordado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div><label for="posServiceCost" class="block text-xs font-semibold text-slate-500 mb-1">Costo directo (opcional)</label><input id="posServiceCost" type="number" min="0" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.costoSugerido ?? ""}" placeholder="Costo de insumos" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><label for="posServiceNotes" class="block text-xs font-semibold text-slate-500 mb-1">Observaciones del procedimiento (opcional)</label><input id="posServiceNotes" type="text" maxlength="500" placeholder="Ej.: cabello largo, tono aplicado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><button type="button" onclick="addSelectedServiceToCart()" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Agregar servicio al carrito</button></div></div>` : '<p class="text-sm text-slate-500">No hay servicios disponibles con ese criterio.</p>'}` : `<div class="flex flex-col gap-3 mb-3"><h3 class="text-lg font-bold">🛍️ Productos disponibles</h3><div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div><label for="posBrandFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por marca</label><select id="posBrandFilter" onchange="setPosBrandFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${brandOptions}</select></div><div><label for="posCategoryFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por categoría</label><select id="posCategoryFilter" onchange="setPosCategoryFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${categoryOptions}</select></div></div></div><div class="grid grid-cols-2 md:grid-cols-3 gap-3">${cards || `<div class="col-span-2 md:col-span-3 rounded-lg border border-dashed p-4 text-sm text-slate-500 text-center">${emptyMessage}</div>`}</div>`}</div></div>
           <div><div class="view-card sticky top-4"><h3 class="text-lg font-bold mb-3">🛒 Carrito</h3><div class="bg-slate-50 rounded-lg p-3 mb-3 max-h-64 overflow-y-auto space-y-2">${cartItems}</div><div class="bg-blue-50 p-3 rounded-lg space-y-1 mb-3 text-sm"><div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(cartTotal)}</span></div><div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">Total:</span><span class="font-bold text-lg text-slate-900">${formatCurrency(cartTotal)}</span></div></div><button onclick="procesarVenta()" class="w-full rounded-lg bg-slate-900 text-white px-4 py-3 font-semibold" ${appState.cart.length === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>Procesar venta</button></div></div>
         </div>
       `;
@@ -1560,7 +1609,7 @@
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">${metricas.serviciosSinCosto ? "Margen conocido" : "Margen promedio"}</p><p class="mt-2 text-2xl font-bold">${metricas.margenPromedio.toFixed(1)}%</p></div>
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Ganancia potencial</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(margenPotencial)}</p><p class="text-xs text-slate-500 mt-1">Inventario actual</p></div>
         </div>
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 border-y py-4"><div><p class="text-xs uppercase text-slate-500">Ingresos por productos</p><p class="text-xl font-bold">${formatCurrency(metricas.ingresosProductos)}</p></div><div><p class="text-xs uppercase text-slate-500">Ingresos por servicios</p><p class="text-xl font-bold">${formatCurrency(metricas.ingresosServicios)}</p></div></div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 border-y py-4"><div><p class="text-xs uppercase text-slate-500">Ingresos por productos</p><p class="text-xl font-bold">${formatCurrency(metricas.ingresosProductos)}</p></div><div><p class="text-xs uppercase text-slate-500">Ingresos por servicios</p><p class="text-xl font-bold">${formatCurrency(metricas.ingresosServicios)}</p></div><div><p class="text-xs uppercase text-slate-500">Abonos de cartera antigua</p><p class="text-xl font-bold">${formatCurrency(metricas.ingresosCarteraAntigua)}</p></div></div>
         <div><h3 class="text-lg font-bold mb-3">Servicios del per&iacute;odo</h3><div class="overflow-x-auto border rounded-lg"><table class="min-w-full"><thead class="bg-slate-50 text-xs uppercase"><tr><th class="px-3 py-2 text-left">Procedimiento</th><th class="px-3 py-2 text-right">Cantidad</th><th class="px-3 py-2 text-right">Ingresos</th><th class="px-3 py-2 text-right">Ganancia conocida</th><th class="px-3 py-2 text-right">Sin costo registrado</th></tr></thead><tbody>${serviceRows || '<tr><td colspan="5" class="px-3 py-4 text-center text-sm text-slate-500">Sin servicios en el per&iacute;odo</td></tr>'}</tbody></table></div></div>
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div class="view-card"><h3 class="text-lg font-bold mb-4">🏆 Top 5 productos</h3><div>${productRows}</div></div>
@@ -1577,7 +1626,7 @@
       const catMap = {};
       sales.forEach(sale => {
         sale.items.forEach(item => {
-          if (item.tipo === "servicio") return;
+          if (item.tipo === "servicio" || item.tipo === "cartera_antigua") return;
           const product = db.products.find(p => p.id === item.productId);
           if (!product) return;
           if (!catMap[product.categoria]) catMap[product.categoria] = { categoria: product.categoria, cantidad: 0, ventas: 0, costo: 0 };
@@ -1772,6 +1821,7 @@
     }
 
     function changeCartQuantity(index, change) {
+      if (appState.cart[index]?.tipo === "cartera_antigua") return;
       const input = document.getElementById(`cart-qty-${index}`);
       let newValue = parseInt(input.value) + change;
       if (newValue < 1) newValue = 1;
@@ -1782,6 +1832,7 @@
     }
 
     function updateCartQuantity(index, value) {
+      if (appState.cart[index]?.tipo === "cartera_antigua") return;
       let newValue = parseInt(value) || 1;
       if (newValue < 1) newValue = 1;
       appState.cart[index].cantidad = newValue;
@@ -1797,6 +1848,7 @@
 
     function procesarVenta() {
       if (appState.cart.length === 0) return;
+      const legacyCustomerId = appState.cart.find(item => item.tipo === "cartera_antigua")?.customerId;
 
       const cartSummary = appState.cart.map(i => `<div class="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-200 last:border-b-0"><span class="truncate">${escapeHtml(i.nombre)}</span><span class="text-slate-500 whitespace-nowrap">${i.cantidad} x ${formatCurrency(i.precio)}</span><span class="font-semibold whitespace-nowrap">${formatCurrency(i.precio * i.cantidad)}</span></div>`).join("");
       const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
@@ -1813,15 +1865,15 @@
           <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
               <label class="block text-sm font-semibold mb-1">Cliente</label>
-              <select id="clienteSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
+              <select id="clienteSelect" ${legacyCustomerId ? "disabled" : ""} class="w-full px-3 py-2 border rounded-lg text-sm">
                 <option value="">-- Venta al contado --</option>
-                ${db.customers.map(c => `<option value="${c.id}">${c.nombre}</option>`).join("")}
+                ${db.customers.map(c => `<option value="${escapeHtml(c.id)}" ${c.id === legacyCustomerId ? "selected" : ""}>${escapeHtml(c.nombre)}</option>`).join("")}
               </select>
             </div>
             <div>
               <label class="block text-sm font-semibold mb-1">Método de pago</label>
               <select id="metodoSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
-                ${paymentMethods.map(method => `<option value="${escapeHtml(method.value)}">${escapeHtml(method.label)}</option>`).join("")}
+                ${paymentMethods.filter(method => !legacyCustomerId || method.value !== "Credito").map(method => `<option value="${escapeHtml(method.value)}">${escapeHtml(method.label)}</option>`).join("")}
               </select>
             </div>
           </div>
@@ -1835,7 +1887,7 @@
           </div>
 
           <div class="bg-slate-50 p-3 rounded-lg mt-3 text-sm border">
-            <div class="font-semibold pb-2">Art&iacute;culos y servicios: ${appState.cart.length}</div>
+            <div class="font-semibold pb-2">Conceptos: ${appState.cart.length}</div>
             ${cartSummary}
           </div>
 
@@ -1943,6 +1995,17 @@
         return;
       }
 
+      const legacyItems = appState.cart.filter(item => item.tipo === "cartera_antigua");
+      if (legacyItems.length > 1 || (legacyItems.length && (metodo === "Credito" || !db.customers.some(customer => customer.id === clienteId)))) return showToast("El abono requiere un cliente registrado y un pago recibido, no crédito.", "warning");
+      const debtsBefore = db.legacyDebts || [];
+      for (const item of legacyItems) {
+        const debt = debtsBefore.find(entry => entry.customerId === item.customerId);
+        const balance = debt ? getLegacyDebtBalance(debt) : Number(item.montoInicial);
+        if (item.customerId !== clienteId || (debt && debt.id !== item.debtId) || item.cantidad !== 1 || !Number.isFinite(item.precio) || item.precio <= 0 || !Number.isFinite(balance) || balance <= 0 || balance > 9999999999.99 || item.precio > balance) return showToast("El abono no corresponde al cliente o supera su saldo actual. Revisa el carrito.", "warning");
+        item.saldoAnterior = balance;
+        item.saldoPosterior = Number((balance - item.precio).toFixed(2));
+      }
+
       const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
       const iva = 0;
       const comisionValor = requiereComision ? calcularValorComision(subtotal + iva, comisionInput) : 0;
@@ -1955,7 +2018,7 @@
         fecha: new Date().toISOString(),
         clienteId,
         items: appState.cart.map(c => {
-          if (c.tipo === "servicio") return { ...c };
+          if (c.tipo === "servicio" || c.tipo === "cartera_antigua") return { ...c };
           const product = db.products.find(entry => entry.id === c.productId);
           return { productId: c.productId, cantidad: c.cantidad, precio: c.precio, stockDescontado: Boolean(product && product.stockActual > 0) };
         }),
@@ -1979,19 +2042,21 @@
         fecha: sale.fecha
       } : null;
       sale.items.forEach(item => {
-        if (item.tipo === "servicio") return;
+        if (item.tipo === "servicio" || item.tipo === "cartera_antigua") return;
         const product = db.products.find(p => p.id === item.productId);
         if (product && item.stockDescontado) {
           product.stockActual -= item.cantidad;
         }
       });
       db.sales.push(sale);
+      db.legacyDebts = [...debtsBefore, ...legacyItems.filter(item => !debtsBefore.some(debt => debt.id === item.debtId)).map(item => ({ id: item.debtId, customerId: item.customerId, monto: item.montoInicial, fecha: sale.fecha }))];
       if (customerCredit) db.customerCredits.push(customerCredit);
       appState.savingSale = true;
       const saved = await saveDB();
       appState.savingSale = false;
       if (!saved) {
         db.sales = db.sales.filter(entry => entry.id !== sale.id);
+        db.legacyDebts = debtsBefore;
         if (customerCredit) db.customerCredits = db.customerCredits.filter(credit => credit.id !== customerCredit.id);
         db.products.forEach(product => { product.stockActual = stockBefore.get(product.id); });
         return;
@@ -2007,6 +2072,10 @@
       }, 300);
     }
 
+    function legacyPaymentDetail(item) {
+      return `Saldo anterior: ${formatCurrency(item.saldoAnterior)}. Abono: ${formatCurrency(item.precio)}. Saldo restante: ${formatCurrency(item.saldoPosterior)}.`;
+    }
+
     function verFactura(saleId) {
       const sale = db.sales.find(s => s.id === saleId);
       if (!sale) return;
@@ -2014,13 +2083,13 @@
       const customer = sale.clienteId ? db.customers.find(c => c.id === sale.clienteId) : null;
       const itemsHtml = sale.items.map(item => {
         const product = db.products.find(p => p.id === item.productId);
-        const description = item.tipo === "servicio" ? `${escapeHtml(item.nombre)}${item.observaciones ? `<p class="text-xs text-slate-500 break-words">${escapeHtml(item.observaciones)}</p>` : ""}` : escapeHtml(product?.nombre || "Producto");
+        const description = ["servicio", "cartera_antigua"].includes(item.tipo) ? `${escapeHtml(item.nombre)}${item.tipo === "cartera_antigua" ? `<p class="text-xs break-words">${escapeHtml(legacyPaymentDetail(item))}</p>` : ""}${item.observaciones ? `<p class="text-xs text-slate-500 break-words">${escapeHtml(item.observaciones)}</p>` : ""}` : escapeHtml(product?.nombre || "Producto");
         return `<tr class="border-b text-sm"><td class="px-2 py-1 break-words">${description}</td><td class="px-2 py-1 text-right">${item.cantidad}</td><td class="px-2 py-1 text-right">${formatCurrency(item.precio)}</td><td class="px-2 py-1 text-right">${formatCurrency(item.cantidad * item.precio)}</td></tr>`;
       }).join("");
       const receiptItemsHtml = sale.items.map(item => {
         const product = db.products.find(entry => entry.id === item.productId);
-        const description = item.tipo === "servicio" ? item.nombre : product?.nombre || "Producto";
-        const notes = item.tipo === "servicio" && item.observaciones ? `<p class="receipt-small">${escapeHtml(item.observaciones)}</p>` : "";
+        const description = ["servicio", "cartera_antigua"].includes(item.tipo) ? item.nombre : product?.nombre || "Producto";
+        const notes = `${item.tipo === "cartera_antigua" ? `<p class="receipt-small">${escapeHtml(legacyPaymentDetail(item))}</p>` : ""}${["servicio", "cartera_antigua"].includes(item.tipo) && item.observaciones ? `<p class="receipt-small">${escapeHtml(item.observaciones)}</p>` : ""}`;
         return `<article class="receipt-line"><p class="receipt-item-name">${escapeHtml(description)}</p>${notes}<div class="receipt-detail"><span>${item.cantidad} x ${formatCurrency(item.precio)}</span><strong class="receipt-amount">${formatCurrency(item.cantidad * item.precio)}</strong></div></article>`;
       }).join("");
       const receiptCustomer = customer ? `${escapeHtml(customer.nombre)}${customer.documento ? `<br><span class="receipt-small">Doc: ${escapeHtml(customer.documento)}</span>` : ""}` : "Consumidor final";
