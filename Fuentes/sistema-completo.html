@@ -48,8 +48,9 @@
     .nav-category { font-size: 11px; font-weight: 700; color: #94a3b8; text-transform: uppercase; padding: 12px 14px; margin-top: 10px; }
     .sidebar-toggle { width: 44px; height: 44px; padding: 8px; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.3); color: white; cursor: pointer; transition: all 200ms ease; }
     .sidebar-toggle:hover { background: rgba(255, 255, 255, 0.3); }
-    aside { transition: transform 300ms ease, width 300ms ease; width: 280px; }
+    aside { transition: transform 300ms ease, width 300ms ease; width: 235px; }
     aside.collapsed { transform: translateX(-100%); width: 0; }
+    @media (max-width: 1023px) { aside { width: 280px; } }
     @media (max-width: 1024px) { aside { position: fixed; left: 0; top: 0; height: 100vh; z-index: 30; } aside.collapsed { transform: translateX(-100%); } }
     #toggleSidebar { position: fixed; top: 20px; left: 20px; z-index: 35; display: none; }
     @media (max-width: 1024px) { #toggleSidebar { display: flex; } }
@@ -82,7 +83,7 @@
 <body class="app-bg text-slate-800">
   <div class="min-h-screen p-4 md:p-6">
     <button id="toggleSidebar" class="sidebar-toggle">☰</button>
-    <div class="mx-auto grid max-w-[1440px] grid-cols-1 gap-4 lg:grid-cols-[280px_1fr] relative">
+    <div class="mx-auto grid max-w-[1440px] grid-cols-1 gap-4 lg:grid-cols-[235px_1fr] relative">
       <!-- SIDEBAR -->
       <aside class="panel-glass rounded-3xl border border-white/60 lg:sticky lg:top-6 h-fit lg:h-[calc(100vh-80px)] flex flex-col">
         <div class="brand-gradient px-6 py-7 text-white flex-shrink-0">
@@ -127,7 +128,9 @@
       { value: "Tarjeta", label: "Tarjeta crédito" },
       { value: "Tarjeta débito", label: "Tarjeta débito" },
       { value: "Transferencia", label: "Transferencia bancaria" },
-      { value: "Nequi", label: "Nequi" },
+      { value: "Nequi Andrea", label: "Nequi Andrea" },
+      { value: "Nequi Emmanuel", label: "Nequi Emmanuel" },
+      { value: "Bancolombia", label: "Bancolombia" },
       { value: "Daviplata", label: "Daviplata" },
       { value: "QR", label: "Pago por QR" },
       { value: "SisteCredito", label: "SisteCrédito" },
@@ -479,7 +482,7 @@
       const productos = items.filter(item => item.tipo !== "servicio" && item.tipo !== "cartera_antigua");
       const servicios = items.filter(item => item.tipo === "servicio");
       const ingresosCarteraAntigua = items.filter(item => item.tipo === "cartera_antigua").reduce((sum, item) => sum + item.precio, 0);
-      const ingresosProductos = productos.reduce((sum, item) => sum + item.cantidad * item.precio, 0);
+      const ingresosProductos = productos.reduce((sum, item) => sum + getItemNetTotal(item), 0);
       const ingresosServicios = servicios.reduce((sum, item) => sum + item.cantidad * item.precio, 0);
       const totalCostoProductos = productos.reduce((sum, item) => sum + item.cantidad * (db.products.find(product => product.id === item.productId)?.precioCompra ?? 0), 0);
       const totalCosto = totalCostoProductos + servicios.reduce((sum, item) => sum + item.cantidad * (item.costo ?? 0), 0);
@@ -500,7 +503,7 @@
           if (item.tipo === "servicio" || item.tipo === "cartera_antigua") return;
           if (!productMap[item.productId]) productMap[item.productId] = { cantidad: 0, ventas: 0, costo: 0 };
           productMap[item.productId].cantidad += item.cantidad;
-          productMap[item.productId].ventas += item.cantidad * item.precio;
+          productMap[item.productId].ventas += getItemNetTotal(item);
           productMap[item.productId].costo += item.cantidad * (db.products.find(p => p.id === item.productId)?.precioCompra ?? 0);
         });
       });
@@ -1275,7 +1278,7 @@
       const visibleCreditIds = new Set(credits.map(credit => credit.id));
       const paymentRows = (st.customerPayments || []).filter(payment => visibleCreditIds.has(payment.creditId)).sort((a, b) => new Date(b.fecha) - new Date(a.fecha)).map(payment => {
         const credit = credits.find(entry => entry.id === payment.creditId);
-        return `<tr class="border-b text-sm"><td class="px-3 py-2">${formatDate(payment.fecha)}</td><td class="px-3 py-2 font-semibold">${escapeHtml(credit?.customer.nombre || "Cliente")}</td><td class="px-3 py-2">${credit?.sale ? `<button type="button" data-sale-id="${escapeHtml(credit.saleId)}" onclick="verFactura(this.dataset.saleId)" class="font-semibold text-teal-700">${escapeHtml(credit.saleId)}</button>` : escapeHtml(credit?.saleId || "-")}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(payment.monto)}</td><td class="px-3 py-2">${escapeHtml(payment.metodoPago || "-")}</td><td class="px-3 py-2">${escapeHtml(payment.observaciones || "-")}</td></tr>`;
+        return `<tr class="border-b text-sm"><td class="px-3 py-2">${formatDate(payment.fecha)}</td><td class="px-3 py-2 font-semibold">${escapeHtml(credit?.customer.nombre || "Cliente")}</td><td class="px-3 py-2">${credit?.sale ? `<button type="button" data-sale-id="${escapeHtml(credit.saleId)}" onclick="verFactura(this.dataset.saleId)" class="font-semibold text-teal-700">${escapeHtml(credit.saleId)}</button>` : escapeHtml(credit?.saleId || "-")}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(payment.monto)}<br><button type="button" data-payment-id="${escapeHtml(payment.id)}" onclick="verComprobanteAbono(this.dataset.paymentId)" class="text-xs font-semibold text-teal-700">Ver comprobante</button></td><td class="px-3 py-2">${escapeHtml(payment.metodoPago || "-")}</td><td class="px-3 py-2">${escapeHtml(payment.observaciones || "-")}</td></tr>`;
       }).join("");
 
       const legacyRows = (st.legacyDebts || []).map(debt => ({ debt, customer: st.customers.find(customer => customer.id === debt.customerId), saldo: getLegacyDebtBalance(debt, st) })).filter(({ debt, customer }) => (!selectedCustomerId || debt.customerId === selectedCustomerId) && `${customer?.nombre || ""} ${customer?.documento || ""}`.toLowerCase().includes(search.toLowerCase())).map(({ debt, customer, saldo }) => `<tr class="border-b text-sm"><td class="px-3 py-2 font-semibold">${escapeHtml(customer?.nombre || "Cliente")}</td><td class="px-3 py-2 text-right">${formatCurrency(debt.monto)}</td><td class="px-3 py-2 text-right">${formatCurrency(debt.monto - saldo)}</td><td class="px-3 py-2 text-right font-semibold">${formatCurrency(saldo)}</td><td class="px-3 py-2 text-center"><button type="button" data-customer-id="${escapeHtml(debt.customerId)}" onclick="openLegacyCustomer(this.dataset.customerId)" class="font-semibold text-teal-700">${saldo > 0 ? "Abonar en POS" : "Ver historial"}</button></td></tr>`).join("");
@@ -1284,8 +1287,12 @@
     }
 
     async function registrarAbono(creditId, monto, metodoPago, observaciones = "") {
+      if (appState.savingCreditPayment) return false;
       const credit = (db.customerCredits || []).find(entry => entry.id === creditId);
-      if (!credit) return false;
+      if (!credit) {
+        showToast("No se encontró el crédito para registrar el abono", "warning");
+        return false;
+      }
       const amount = Number(monto);
       const saldo = getCreditBalance(credit);
       if (!Number.isFinite(amount) || amount <= 0 || amount > saldo) {
@@ -1297,14 +1304,76 @@
         return false;
       }
 
-      const payment = { id: uid("pay"), creditId, monto: amount, fecha: new Date().toISOString(), metodoPago, observaciones: observaciones.trim() };
+      const payment = { id: uid("pay"), creditId, monto: amount, fecha: new Date().toISOString(), metodoPago, observaciones: observaciones.trim(), saldoAnterior: saldo, saldoPosterior: Number((saldo - amount).toFixed(2)) };
       db.customerPayments.push(payment);
-      if (!await saveDB()) {
-        db.customerPayments.pop();
+      appState.savingCreditPayment = true;
+      let saved;
+      try {
+        saved = await saveDB();
+      } finally {
+        appState.savingCreditPayment = false;
+      }
+      if (!saved) {
+        db.customerPayments = db.customerPayments.filter(entry => entry.id !== payment.id);
         return false;
       }
       showToast("Abono registrado", "success");
+      renderView();
+      verComprobanteAbono(payment.id);
       return true;
+    }
+
+    function verComprobanteAbono(paymentId) {
+      const payment = (db.customerPayments || []).find(entry => entry.id === paymentId);
+      const credit = payment && (db.customerCredits || []).find(entry => entry.id === payment.creditId);
+      if (!payment || !credit) {
+        showToast("No se encontró el abono o su crédito", "warning");
+        return;
+      }
+      const customer = db.customers.find(entry => entry.id === credit.customerId);
+      let saldoAnterior = payment.saldoAnterior;
+      let saldoPosterior = payment.saldoPosterior;
+      if (saldoAnterior == null || saldoPosterior == null) {
+        const payments = db.customerPayments.filter(entry => entry.creditId === credit.id)
+          .sort((left, right) => new Date(left.fecha) - new Date(right.fecha) || left.id.localeCompare(right.id));
+        const previousPayments = payments.slice(0, payments.findIndex(entry => entry.id === payment.id));
+        saldoAnterior = Number((Number(credit.monto) - previousPayments.reduce((total, entry) => total + Number(entry.monto), 0)).toFixed(2));
+        saldoPosterior = Number((saldoAnterior - Number(payment.monto)).toFixed(2));
+      }
+      const details = `
+        <p><strong>Comprobante:</strong> ${escapeHtml(payment.id)}</p>
+        <p><strong>Factura de origen:</strong> ${escapeHtml(credit.saleId)}</p>
+        <p><strong>Fecha:</strong> ${escapeHtml(formatDate(payment.fecha))}</p>
+        <p><strong>Cliente:</strong> ${escapeHtml(customer?.nombre || "Cliente")}</p>
+        ${customer?.documento ? `<p><strong>Documento:</strong> ${escapeHtml(customer.documento)}</p>` : ""}
+        <p><strong>Método de pago:</strong> ${escapeHtml(payment.metodoPago || "-")}</p>
+        <div class="receipt-separator my-3 border-t border-dashed"></div>
+        <div class="receipt-detail flex justify-between gap-3"><span>Deuda antes del abono</span><strong class="receipt-amount">${formatCurrency(saldoAnterior)}</strong></div>
+        <div class="receipt-detail flex justify-between gap-3"><span>Valor abonado</span><strong class="receipt-amount">${formatCurrency(payment.monto)}</strong></div>
+        <div class="receipt-detail receipt-total flex justify-between gap-3"><strong>Saldo pendiente</strong><strong class="receipt-amount">${formatCurrency(saldoPosterior)}</strong></div>
+        ${payment.observaciones ? `<p class="receipt-small mt-3 break-words">${escapeHtml(payment.observaciones)}</p>` : ""}
+      `;
+      const receiptHtml = `<section id="thermalReceipt" aria-hidden="true">
+        <header class="receipt-center">
+          <img class="receipt-logo" src="Logo_AndreCG_thermal.png" alt="Logo ANDRE CG Mujer Mágica" />
+          <p class="receipt-title">ANDRE CG</p><p>Mujer Mágica - Tienda de belleza</p>
+          <p class="receipt-address">Dir: Centro comercial Feria de los Plátanos, local 3 - Armenia<br>Tel: 3175769914</p>
+          <p class="receipt-small">COMPROBANTE DE ABONO</p>
+        </header><div class="receipt-separator"></div>${details}
+        <div class="receipt-separator"></div><p class="receipt-center receipt-small">Gracias por tu abono</p>
+      </section>`;
+      const div = document.createElement("div");
+      div.className = "modal-content";
+      div.innerHTML = `<div class="modal-header"><h3 class="text-lg font-bold">Comprobante de abono</h3></div>
+        <div class="modal-body space-y-2 text-sm">${details}</div>
+        <div class="modal-footer">
+          <button type="button" onclick="imprimirFactura()" class="flex-1 rounded-lg border px-3 py-2 font-semibold">Imprimir</button>
+          <button type="button" onclick="cerrarModal()" class="flex-1 rounded-lg bg-slate-900 px-3 py-2 font-semibold text-white">Cerrar</button>
+        </div>`;
+      document.getElementById("modalContent").innerHTML = "";
+      document.getElementById("modalContent").appendChild(div);
+      document.getElementById("thermalPrintRoot").innerHTML = receiptHtml;
+      document.getElementById("modalBackdrop").classList.add("active");
     }
 
     function showCreditPaymentModal(creditId) {
@@ -1322,11 +1391,7 @@
       document.getElementById("modalBackdrop").classList.add("active");
       document.getElementById("creditPaymentForm").addEventListener("submit", async event => {
         event.preventDefault();
-        const saved = await registrarAbono(creditId, document.getElementById("creditPaymentAmount").value, document.getElementById("creditPaymentMethod").value, document.getElementById("creditPaymentNotes").value);
-        if (saved) {
-          cerrarModal();
-          renderView();
-        }
+        await registrarAbono(creditId, document.getElementById("creditPaymentAmount").value, document.getElementById("creditPaymentMethod").value, document.getElementById("creditPaymentNotes").value);
       });
     }
 
@@ -1467,6 +1532,28 @@
       cerrarModal();
     }
 
+    function getItemDiscountPerUnit(item) {
+      if (item.tipo || !item.productId) return 0;
+      const price = Math.max(0, Number(item.precio) || 0);
+      const value = Math.max(0, Number(item.descuentoValor) || 0);
+      const discount = item.descuentoTipo === "porcentaje"
+        ? Math.round(price * Math.min(value, 100) / 100)
+        : Math.round(Math.min(value, price));
+      return Math.min(price, discount);
+    }
+
+    function getItemDiscountTotal(item) {
+      return getItemDiscountPerUnit(item) * Number(item.cantidad || 0);
+    }
+
+    function getItemNetTotal(item) {
+      return Number(item.precio || 0) * Number(item.cantidad || 0) - getItemDiscountTotal(item);
+    }
+
+    function getSaleDiscountTotal(sale) {
+      return (sale.items || []).reduce((total, item) => total + getItemDiscountTotal(item), 0);
+    }
+
     function renderPOS(st, search = "") {
       const criteria = search.toLowerCase();
       const brands = [...new Set(st.products.map(p => (p.marca || "").trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b));
@@ -1509,26 +1596,53 @@
         </div>`;
       }).join("");
 
-      const cartTotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
+      const cartSubtotal = appState.cart.reduce((sum, item) => sum + item.precio * item.cantidad, 0);
+      const cartDiscountTotal = appState.cart.reduce((sum, item) => sum + getItemDiscountTotal(item), 0);
+      const cartTotal = cartSubtotal - cartDiscountTotal;
 
-      const cartItems = appState.cart.length > 0 ? appState.cart.map((item, idx) => `
+      const cartItems = appState.cart.length > 0 ? appState.cart.map((item, idx) => {
+        const isProduct = !item.tipo && Boolean(item.productId);
+        const discountTotal = getItemDiscountTotal(item);
+        const lineSubtotal = item.precio * item.cantidad;
+        const lineTotal = lineSubtotal - discountTotal;
+        const discountControls = isProduct ? `
+          <div class="grid grid-cols-2 gap-2">
+            <label class="text-xs text-slate-600">Tipo de descuento
+              <select id="cart-discount-type-${idx}" class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs" onchange="updateCartDiscountType(${idx}, this.value)">
+                <option value="fijo" ${(item.descuentoTipo || "fijo") === "fijo" ? "selected" : ""}>Fijo por unidad</option>
+                <option value="porcentaje" ${item.descuentoTipo === "porcentaje" ? "selected" : ""}>Porcentaje</option>
+              </select>
+            </label>
+            <label class="text-xs text-slate-600">${item.descuentoTipo === "porcentaje" ? "Descuento (%)" : "Descuento (COP)"}
+              <input type="number" id="cart-discount-${idx}" min="0" max="${item.descuentoTipo === "porcentaje" ? 100 : item.precio}" step="${item.descuentoTipo === "porcentaje" ? 0.1 : 1}" value="${Number(item.descuentoValor) || 0}" class="mt-1 w-full rounded border border-slate-300 px-2 py-1 text-xs" onchange="updateCartDiscount(${idx}, this.value)" />
+            </label>
+          </div>` : "";
+        return `
         <div class="bg-white p-3 rounded-lg border space-y-2">
           <div>
             <p class="font-semibold text-sm break-words">${escapeHtml(item.nombre)}</p>
-            <p class="text-xs text-slate-500">${formatCurrency(item.precio)}${item.tipo === "cartera_antigua" ? ` · Saldo restante: ${formatCurrency(item.saldoPosterior)}` : ` c/u${item.tipo === "servicio" ? "" : ` · ${item.tipoPrecio === "mayorista" ? "Por mayor" : "Al detal"}`}`}</p>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="text-xs text-slate-500">${formatCurrency(item.precio)}${item.tipo === "cartera_antigua" ? ` · Saldo restante: ${formatCurrency(item.saldoPosterior)}` : ` c/u${item.tipo === "servicio" ? "" : ` · ${item.tipoPrecio === "mayorista" ? "Por mayor" : "Al detal"}`}`}</p>
+              <div class="${item.tipo === "cartera_antigua" ? "hidden" : "flex"} shrink-0 items-center gap-1">
+                <button type="button" onclick="changeCartQuantity(${idx}, -1)" aria-label="Disminuir cantidad" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold">−</button>
+                <input type="number" id="cart-qty-${idx}" value="${item.cantidad}" min="1" aria-label="Cantidad" class="w-10 h-6 px-1 border border-slate-300 rounded text-center text-xs font-semibold" onchange="updateCartQuantity(${idx}, this.value)" />
+                <button type="button" onclick="changeCartQuantity(${idx}, 1)" aria-label="Aumentar cantidad" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold">+</button>
+              </div>
+            </div>
             ${item.tipo === "servicio" ? `<p class="text-xs text-slate-500 break-words">Servicio${item.observaciones ? `: ${escapeHtml(item.observaciones)}` : ""}</p><button type="button" onclick="showServiceSaleModal(null, ${idx})" class="text-xs font-semibold text-teal-700">Editar precio y detalles</button>` : ""}
           </div>
-          <div class="${item.tipo === "cartera_antigua" ? "hidden" : "flex"} items-center gap-2">
-            <button onclick="changeCartQuantity(${idx}, -1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold">−</button>
-            <input type="number" id="cart-qty-${idx}" value="${item.cantidad}" min="1" class="flex-1 px-2 py-1 border border-slate-300 rounded text-center text-xs font-semibold" onchange="updateCartQuantity(${idx}, this.value)" />
-            <button onclick="changeCartQuantity(${idx}, 1)" class="w-6 h-6 bg-slate-200 hover:bg-slate-300 rounded text-xs font-bold">+</button>
-          </div>
+          ${discountControls}
           <div class="flex justify-between items-center">
-            <p class="font-bold text-sm">${formatCurrency(item.cantidad * item.precio)}</p>
+            <div class="text-right text-xs">
+              <p>Subtotal: ${formatCurrency(lineSubtotal)}</p>
+              ${discountTotal > 0 ? `<p class="text-red-700">Descuento: -${formatCurrency(discountTotal)}</p>` : ""}
+              <p class="font-bold text-sm">Total: ${formatCurrency(lineTotal)}</p>
+            </div>
             <button onclick="removeFromCart(${idx})" class="text-xs text-red-600 hover:text-red-700 font-semibold">✕</button>
           </div>
         </div>
-      `).join("") : '<p class="text-sm text-slate-400 text-center py-4">Carrito vacío</p>';
+      `;
+      }).join("") : '<p class="text-sm text-slate-400 text-center py-4">Carrito vacío</p>';
 
       const brandOptions = [
         '<option value="">Todas las marcas</option>',
@@ -1555,7 +1669,7 @@
         ${barcodeScanner}
         <div class="grid grid-cols-1 xl:grid-cols-3 gap-4">
           <div class="xl:col-span-2"><div class="view-card">${tabs}${appState.posTab === "cartera_antigua" ? renderLegacyDebtForm(st) : appState.posTab === "servicios" ? `<div class="flex flex-wrap justify-between items-center gap-3 mb-4"><div><h3 class="text-lg font-bold">Agregar servicio</h3><p class="text-sm text-slate-500">Elige un procedimiento y registra su valor acordado.</p></div><button type="button" onclick="cambiarRuta('servicios')" class="text-sm font-semibold text-teal-700">Administrar cat&aacute;logo</button></div>${serviceOptions ? `<div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div class="md:col-span-2"><label for="posServiceSelect" class="block text-xs font-semibold text-slate-500 mb-1">Procedimiento</label><select id="posServiceSelect" onchange="onPosServiceSelected(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm"><option value="">Selecciona un servicio</option>${serviceOptions}</select></div><div><label for="posServicePrice" class="block text-xs font-semibold text-slate-500 mb-1">Valor del servicio</label><input id="posServicePrice" type="number" min="0.01" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.precioSugerido ?? ""}" placeholder="Ingresa el valor acordado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div><label for="posServiceCost" class="block text-xs font-semibold text-slate-500 mb-1">Costo directo (opcional)</label><input id="posServiceCost" type="number" min="0" max="9999999999.99" step="0.01" value="${(st.services || []).find(service => service.id === appState.selectedPosServiceId)?.costoSugerido ?? ""}" placeholder="Costo de insumos" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><label for="posServiceNotes" class="block text-xs font-semibold text-slate-500 mb-1">Observaciones del procedimiento (opcional)</label><input id="posServiceNotes" type="text" maxlength="500" placeholder="Ej.: cabello largo, tono aplicado" class="w-full rounded-lg border px-3 py-2 text-sm" /></div><div class="md:col-span-2"><button type="button" onclick="addSelectedServiceToCart()" class="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Agregar servicio al carrito</button></div></div>` : '<p class="text-sm text-slate-500">No hay servicios disponibles con ese criterio.</p>'}` : `<div class="flex flex-col gap-3 mb-3"><h3 class="text-lg font-bold">🛍️ Productos disponibles</h3><div class="grid grid-cols-1 gap-3 md:grid-cols-2"><div><label for="posBrandFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por marca</label><select id="posBrandFilter" onchange="setPosBrandFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${brandOptions}</select></div><div><label for="posCategoryFilter" class="block text-xs font-semibold text-slate-500 mb-1">Filtrar por categoría</label><select id="posCategoryFilter" onchange="setPosCategoryFilter(this.value)" class="w-full rounded-lg border px-3 py-2 text-sm">${categoryOptions}</select></div></div></div><div class="grid grid-cols-2 md:grid-cols-3 gap-3">${cards || `<div class="col-span-2 md:col-span-3 rounded-lg border border-dashed p-4 text-sm text-slate-500 text-center">${emptyMessage}</div>`}</div>`}</div></div>
-          <div><div class="view-card sticky top-4"><h3 class="text-lg font-bold mb-3">🛒 Carrito</h3><div class="bg-slate-50 rounded-lg p-3 mb-3 max-h-64 overflow-y-auto space-y-2">${cartItems}</div><div class="bg-blue-50 p-3 rounded-lg space-y-1 mb-3 text-sm"><div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(cartTotal)}</span></div><div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">Total:</span><span class="font-bold text-lg text-slate-900">${formatCurrency(cartTotal)}</span></div></div><button onclick="procesarVenta()" class="w-full rounded-lg bg-slate-900 text-white px-4 py-3 font-semibold" ${appState.cart.length === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>Procesar venta</button></div></div>
+          <div><div class="view-card flex max-h-[calc(100vh-2rem)] flex-col xl:sticky xl:top-4"><h3 class="text-lg font-bold mb-3">🛒 Carrito</h3><div class="cart-items-list bg-slate-50 p-3 mb-3 min-h-0 flex-1 max-h-[34rem] overflow-y-auto space-y-2">${cartItems}</div><div class="bg-blue-50 p-3 rounded-lg space-y-1 mb-3 text-sm"><div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(cartSubtotal)}</span></div>${cartDiscountTotal > 0 ? `<div class="flex justify-between text-red-700"><span>Descuento:</span><span class="font-semibold">-${formatCurrency(cartDiscountTotal)}</span></div>` : ""}<div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">Total:</span><span class="font-bold text-lg text-slate-900">${formatCurrency(cartTotal)}</span></div></div><button onclick="procesarVenta()" class="w-full rounded-lg bg-slate-900 text-white px-4 py-3 font-semibold" ${appState.cart.length === 0 ? 'disabled style="opacity:0.5;cursor:not-allowed"' : ''}>Procesar venta</button></div></div>
         </div>
       `;
     }
@@ -1631,7 +1745,7 @@
           if (!product) return;
           if (!catMap[product.categoria]) catMap[product.categoria] = { categoria: product.categoria, cantidad: 0, ventas: 0, costo: 0 };
           catMap[product.categoria].cantidad += item.cantidad;
-          catMap[product.categoria].ventas += item.cantidad * item.precio;
+          catMap[product.categoria].ventas += getItemNetTotal(item);
           catMap[product.categoria].costo += item.cantidad * product.precioCompra;
         });
       });
@@ -1726,13 +1840,51 @@
       document.querySelector(".cart-badge").textContent = appState.cart.length;
     }
 
+    function getProductCartQuantity(productId, exceptIndex = -1) {
+      return appState.cart.reduce((quantity, item, index) => {
+        if (index === exceptIndex || item.tipo || item.productId !== productId) return quantity;
+        return quantity + (Number(item.cantidad) || 0);
+      }, 0);
+    }
+
+    function ensureProductStock(productId, quantity, exceptIndex = -1) {
+      const product = db.products.find(entry => entry.id === productId);
+      const stock = Number(product?.stockActual);
+      const available = Math.max(0, (Number.isFinite(stock) ? stock : 0) - getProductCartQuantity(productId, exceptIndex));
+      if (product && Number.isFinite(stock) && quantity > 0 && quantity <= available) return true;
+      const name = product?.nombre || "Este producto";
+      showToast(available > 0
+        ? `Stock insuficiente para ${name}. Disponible: ${available}.`
+        : `No se puede agregar ${name}: no hay stock disponible.`, "warning");
+      return false;
+    }
+
+    function validateCartProductStock() {
+      const quantities = new Map();
+      for (const item of appState.cart) {
+        if (item.tipo || !item.productId) continue;
+        quantities.set(item.productId, (quantities.get(item.productId) || 0) + (Number(item.cantidad) || 0));
+      }
+      for (const [productId, quantity] of quantities) {
+        const product = db.products.find(entry => entry.id === productId);
+        const stock = Number(product?.stockActual);
+        if (!product || !Number.isFinite(stock) || stock < quantity) {
+          showToast(`Stock insuficiente para ${product?.nombre || "un producto"}. Revisa el carrito antes de facturar.`, "warning");
+          return false;
+        }
+      }
+      return true;
+    }
+
     function addToCart(productId, nombre, precio) {
       const tipoPrecio = getPosPriceMode();
+      const existingIndex = appState.cart.findIndex(c => c.productId === productId && (c.tipoPrecio || "detal") === tipoPrecio);
+      const existing = existingIndex >= 0 ? appState.cart[existingIndex] : null;
+      if (!ensureProductStock(productId, (existing?.cantidad || 0) + 1, existingIndex)) return;
       if (tipoPrecio === "mayorista" && (!Number.isFinite(Number(precio)) || Number(precio) <= 0)) {
         showToast("Este producto no tiene precio mayorista registrado", "warning");
         return;
       }
-      const existing = appState.cart.find(c => c.productId === productId && (c.tipoPrecio || "detal") === tipoPrecio);
       if (existing) {
         existing.cantidad += 1;
       } else {
@@ -1753,14 +1905,15 @@
     }
 
     function addToCartQty(productId, nombre, precio, tipoPrecio = getPosPriceMode()) {
+      const input = document.getElementById(`qty-${productId}`);
+      const cantidad = parseInt(input.value) || 1;
+      const existingIndex = appState.cart.findIndex(c => c.productId === productId && (c.tipoPrecio || "detal") === tipoPrecio);
+      const existing = existingIndex >= 0 ? appState.cart[existingIndex] : null;
+      if (!ensureProductStock(productId, (existing?.cantidad || 0) + cantidad, existingIndex)) return;
       if (tipoPrecio === "mayorista" && (!Number.isFinite(Number(precio)) || Number(precio) <= 0)) {
         showToast("Este producto no tiene precio mayorista registrado", "warning");
         return;
       }
-      const input = document.getElementById(`qty-${productId}`);
-      const cantidad = parseInt(input.value) || 1;
-      
-      const existing = appState.cart.find(c => c.productId === productId && (c.tipoPrecio || "detal") === tipoPrecio);
       if (existing) {
         existing.cantidad += cantidad;
       } else {
@@ -1807,8 +1960,8 @@
 
       const existing = appState.cart.find(item => item.productId === product.id && (item.tipoPrecio || "detal") === tipoPrecio);
       const cantidadActual = existing?.cantidad || 0;
-      if (Number(product.stockActual) <= cantidadActual) {
-        showToast(`Stock insuficiente para ${product.nombre}`, "warning");
+      const existingIndex = existing ? appState.cart.indexOf(existing) : -1;
+      if (!ensureProductStock(product.id, cantidadActual + 1, existingIndex)) {
         focusBarcodeScanner();
         return;
       }
@@ -1825,6 +1978,8 @@
       const input = document.getElementById(`cart-qty-${index}`);
       let newValue = parseInt(input.value) + change;
       if (newValue < 1) newValue = 1;
+      const item = appState.cart[index];
+      if (item?.productId && !ensureProductStock(item.productId, newValue, index)) return;
       input.value = newValue;
       appState.cart[index].cantidad = newValue;
       updateCartBadge();
@@ -1835,8 +1990,32 @@
       if (appState.cart[index]?.tipo === "cartera_antigua") return;
       let newValue = parseInt(value) || 1;
       if (newValue < 1) newValue = 1;
+      const item = appState.cart[index];
+      if (item?.productId && !ensureProductStock(item.productId, newValue, index)) {
+        const input = document.getElementById(`cart-qty-${index}`);
+        if (input) input.value = item.cantidad;
+        return;
+      }
       appState.cart[index].cantidad = newValue;
       updateCartBadge();
+      renderView();
+    }
+
+    function updateCartDiscountType(index, type) {
+      const item = appState.cart[index];
+      if (!item || item.tipo || !item.productId) return;
+      item.descuentoTipo = type === "porcentaje" ? "porcentaje" : "fijo";
+      const max = item.descuentoTipo === "porcentaje" ? 100 : Number(item.precio);
+      item.descuentoValor = Math.min(Math.max(0, Number(item.descuentoValor) || 0), max);
+      renderView();
+    }
+
+    function updateCartDiscount(index, value) {
+      const item = appState.cart[index];
+      if (!item || item.tipo || !item.productId) return;
+      const max = item.descuentoTipo === "porcentaje" ? 100 : Number(item.precio);
+      const discount = Number(value);
+      item.descuentoValor = Number.isFinite(discount) ? Math.min(Math.max(0, discount), max) : 0;
       renderView();
     }
 
@@ -1850,10 +2029,16 @@
       if (appState.cart.length === 0) return;
       const legacyCustomerId = appState.cart.find(item => item.tipo === "cartera_antigua")?.customerId;
 
-      const cartSummary = appState.cart.map(i => `<div class="flex items-center justify-between gap-3 text-sm py-2 border-b border-slate-200 last:border-b-0"><span class="truncate">${escapeHtml(i.nombre)}</span><span class="text-slate-500 whitespace-nowrap">${i.cantidad} x ${formatCurrency(i.precio)}</span><span class="font-semibold whitespace-nowrap">${formatCurrency(i.precio * i.cantidad)}</span></div>`).join("");
+      const cartSummary = appState.cart.map(item => {
+        const subtotal = item.precio * item.cantidad;
+        const discount = getItemDiscountTotal(item);
+        return `<div class="grid grid-cols-[1fr_auto] gap-x-3 text-sm py-2 border-b border-slate-200 last:border-b-0"><span class="truncate">${escapeHtml(item.nombre)} · ${item.cantidad} x ${formatCurrency(item.precio)}</span><span class="font-semibold whitespace-nowrap">${formatCurrency(subtotal - discount)}</span>${discount > 0 ? `<span class="text-xs text-red-700">Descuento: -${formatCurrency(discount)}</span>` : ""}</div>`;
+      }).join("");
       const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
+      const descuentoTotal = appState.cart.reduce((sum, item) => sum + getItemDiscountTotal(item), 0);
       const iva = 0;
-      const total = subtotal + iva;
+      const subtotalNeto = subtotal - descuentoTotal;
+      const total = subtotalNeto + iva;
 
       const div = document.createElement("div");
       div.className = "modal-content modal-wide";
@@ -1872,7 +2057,7 @@
             </div>
             <div>
               <label class="block text-sm font-semibold mb-1">Método de pago</label>
-              <select id="metodoSelect" class="w-full px-3 py-2 border rounded-lg text-sm">
+              <select id="metodoSelect" onchange="actualizarCampoComision(); actualizarCamposCredito(); actualizarAbonoInicial(true)" class="w-full px-3 py-2 border rounded-lg text-sm">
                 ${paymentMethods.filter(method => !legacyCustomerId || method.value !== "Credito").map(method => `<option value="${escapeHtml(method.value)}">${escapeHtml(method.label)}</option>`).join("")}
               </select>
             </div>
@@ -1886,6 +2071,26 @@
             </select>
           </div>
 
+          <div id="creditInitialPaymentGroup" class="hidden mt-3 rounded-lg border bg-teal-50 p-3">
+            <h4 class="text-sm font-bold">Abono inicial</h4>
+            <p class="mb-2 text-xs text-slate-600">Registra aquí el pago que recibes al momento de vender a crédito.</p>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div><label for="creditInitialPaymentAmount" class="mb-1 block text-xs font-semibold">Valor del abono</label><input id="creditInitialPaymentAmount" type="number" min="0" max="${total}" step="1" value="0" class="w-full rounded-lg border px-3 py-2 text-sm" /></div>
+              <div><label for="creditInitialPaymentMethod" class="mb-1 block text-xs font-semibold">Método del abono</label><select id="creditInitialPaymentMethod" onchange="actualizarAbonoInicial()" class="w-full rounded-lg border bg-white px-3 py-2 text-sm"><option value="">Selecciona método</option>${paymentMethods.filter(method => method.value !== "Credito").map(method => `<option value="${escapeHtml(method.value)}">${escapeHtml(method.label)}</option>`).join("")}</select></div>
+            </div>
+            <div id="creditInitialCommissionGroup" class="hidden mt-3">
+              <label for="creditInitialCommissionRate" class="mb-1 block text-xs font-semibold">Porcentaje de comisión del abono</label>
+              <select id="creditInitialCommissionRate" onchange="actualizarAbonoInicial()" class="w-full rounded-lg border bg-white px-3 py-2 text-sm"><option value="">Selecciona el porcentaje</option>${commissionRates.map(rate => `<option value="${rate}">${rate}%</option>`).join("")}</select>
+            </div>
+            <div id="creditInitialCommissionSummary" class="hidden mt-3 space-y-1 border-t pt-2 text-xs">
+              <div class="flex justify-between"><span>Comisión:</span><span id="creditInitialCommissionValue" class="font-semibold"></span></div>
+              <div id="creditInitialEntityFeeRow" class="hidden flex justify-between"><span id="creditInitialEntityFeeLabel">Retención de entidad:</span><span id="creditInitialEntityFeeValue" class="font-semibold"></span></div>
+              <div class="flex justify-between"><span>Total cobrado por el abono:</span><span id="creditInitialChargedValue" class="font-semibold"></span></div>
+              <div class="flex justify-between font-bold"><span>Neto recibido:</span><span id="creditInitialNetValue"></span></div>
+            </div>
+            <p class="mt-2 text-right text-sm font-semibold">Saldo pendiente: <span id="creditBalancePreview">${formatCurrency(total)}</span></p>
+          </div>
+
           <div class="bg-slate-50 p-3 rounded-lg mt-3 text-sm border">
             <div class="font-semibold pb-2">Conceptos: ${appState.cart.length}</div>
             ${cartSummary}
@@ -1893,6 +2098,8 @@
 
           <div class="bg-slate-50 p-2 rounded-lg mt-2 text-sm space-y-1 border-2 border-slate-900">
             <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(subtotal)}</span></div>
+            ${descuentoTotal > 0 ? `<div class="flex justify-between text-red-700"><span>Descuento:</span><span class="font-semibold">-${formatCurrency(descuentoTotal)}</span></div>` : ""}
+            <div class="flex justify-between"><span>Subtotal con descuento:</span><span class="font-semibold">${formatCurrency(subtotalNeto)}</span></div>
             <div class="flex justify-between"><span>IVA:</span><span class="font-semibold">${formatCurrency(iva)}</span></div>
             <div id="commissionAmountRow" data-base="${total}" class="hidden flex justify-between"><span id="commissionAmountLabel">Comisión:</span><span id="commissionAmountValue" class="font-semibold">${formatCurrency(0)}</span></div>
             <div id="entityFeeRow" class="hidden flex justify-between"><span id="entityFeeLabel">Retención de entidad:</span><span id="entityFeeValue" class="font-semibold">${formatCurrency(0)}</span></div>
@@ -1909,9 +2116,28 @@
       document.getElementById("modalContent").innerHTML = "";
       document.getElementById("modalContent").appendChild(div);
       document.getElementById("modalBackdrop").classList.add("active");
-      document.getElementById("metodoSelect").addEventListener("change", actualizarCampoComision);
       document.getElementById("commissionSelect").addEventListener("change", actualizarResumenComision);
+      document.getElementById("creditInitialPaymentAmount").addEventListener("input", () => {
+        actualizarCamposCredito();
+        actualizarAbonoInicial();
+      });
       actualizarCampoComision();
+      actualizarCamposCredito();
+      actualizarAbonoInicial(true);
+    }
+
+    function actualizarCamposCredito() {
+      const isCredit = document.getElementById("metodoSelect")?.value === "Credito";
+      const group = document.getElementById("creditInitialPaymentGroup");
+      const amountInput = document.getElementById("creditInitialPaymentAmount");
+      const paymentMethod = document.getElementById("creditInitialPaymentMethod");
+      const balancePreview = document.getElementById("creditBalancePreview");
+      const amount = Number(amountInput?.value || 0);
+      const total = Number(document.getElementById("commissionAmountRow")?.dataset.base || 0);
+      const validAmount = Number.isFinite(amount) ? Math.min(Math.max(amount, 0), total) : 0;
+      if (group) group.classList.toggle("hidden", !isCredit);
+      if (paymentMethod) paymentMethod.required = isCredit && amount > 0;
+      if (balancePreview) balancePreview.textContent = formatCurrency(Math.max(0, total - validAmount));
     }
 
     function actualizarCampoComision() {
@@ -1941,6 +2167,62 @@
         return { porcentaje: entityFeeRate, valor: calcularValorComision(total, entityFeeRate) };
       }
       return { porcentaje: null, valor: 0 };
+    }
+
+    function calcularDetallesAbono(monto, method, percentage) {
+      const commissionApplies = commissionPaymentMethods.has(method) && commissionRates.includes(Number(percentage));
+      const commission = commissionApplies ? calcularValorComision(monto, percentage) : 0;
+      const montoCobrado = Number(monto) + (method === "QR" ? 0 : commission);
+      const entityFee = commissionApplies
+        ? calcularComisionEntidad(method, montoCobrado, percentage, commission)
+        : { porcentaje: null, valor: 0 };
+      return {
+        comisionPorcentaje: commissionApplies ? Number(percentage) : null,
+        comisionValor: commission,
+        comisionEntidadPorcentaje: entityFee.porcentaje,
+        comisionEntidadValor: entityFee.valor,
+        montoCobrado,
+        netoRecibido: Math.max(0, montoCobrado - entityFee.valor)
+      };
+    }
+
+    function actualizarAbonoInicial(resetRate = false) {
+      const isCredit = document.getElementById("metodoSelect")?.value === "Credito";
+      const amount = Number(document.getElementById("creditInitialPaymentAmount")?.value || 0);
+      const method = document.getElementById("creditInitialPaymentMethod")?.value || "";
+      const rateSelect = document.getElementById("creditInitialCommissionRate");
+      const commissionGroup = document.getElementById("creditInitialCommissionGroup");
+      const summary = document.getElementById("creditInitialCommissionSummary");
+      const applies = isCredit && amount > 0 && commissionPaymentMethods.has(method);
+      if (commissionGroup) commissionGroup.classList.toggle("hidden", !applies);
+      if (rateSelect) {
+        if (resetRate) rateSelect.value = method === "QR" ? "1.5" : "";
+        else if (method === "QR" && !rateSelect.value) rateSelect.value = "1.5";
+        if (!commissionPaymentMethods.has(method)) rateSelect.value = "";
+        rateSelect.required = applies;
+      }
+
+      const percentage = Number(rateSelect?.value || 0);
+      const hasRate = commissionRates.includes(percentage);
+      const details = calcularDetallesAbono(amount, method, percentage);
+      const isQr = method === "QR";
+      const entityFeeRow = document.getElementById("creditInitialEntityFeeRow");
+      const commissionValue = document.getElementById("creditInitialCommissionValue");
+      const entityFeeLabel = document.getElementById("creditInitialEntityFeeLabel");
+      const entityFeeValue = document.getElementById("creditInitialEntityFeeValue");
+      const chargedValue = document.getElementById("creditInitialChargedValue");
+      const netValue = document.getElementById("creditInitialNetValue");
+      if (summary) summary.classList.toggle("hidden", !applies || !hasRate);
+      if (entityFeeRow) entityFeeRow.classList.toggle("hidden", !applies || !hasRate || isQr || details.comisionEntidadPorcentaje == null);
+      if (commissionValue) commissionValue.textContent = `${isQr ? "Descontada del neto" : "Adicional al abono"}: ${formatCurrency(details.comisionValor)}`;
+      if (entityFeeLabel && details.comisionEntidadPorcentaje != null) {
+        entityFeeLabel.textContent = entityFeePaymentMethods.has(method)
+          ? `Retención ${method === "SisteCredito" ? "SisteCrédito" : "Addi"} (${entityFeeRate}%):`
+          : `Retención bancaria (2,67% + ${formatCurrency(300)}):`;
+      }
+      if (entityFeeValue) entityFeeValue.textContent = formatCurrency(details.comisionEntidadValor);
+      if (chargedValue) chargedValue.textContent = formatCurrency(details.montoCobrado);
+      if (netValue) netValue.textContent = formatCurrency(details.netoRecibido);
     }
 
     function actualizarResumenComision() {
@@ -1982,9 +2264,13 @@
 
     async function confirmarVenta() {
       if (!appState.cart.length || appState.savingSale) return;
+      if (!validateCartProductStock()) return;
       const clienteId = document.getElementById("clienteSelect").value || null;
       const metodo = document.getElementById("metodoSelect").value;
       const comisionInput = document.getElementById("commissionSelect")?.value || "";
+      const abonoInicial = metodo === "Credito" ? Number(document.getElementById("creditInitialPaymentAmount")?.value || 0) : 0;
+      const metodoAbonoInicial = document.getElementById("creditInitialPaymentMethod")?.value || "";
+      const porcentajeAbonoInicial = Number(document.getElementById("creditInitialCommissionRate")?.value || 0);
       const requiereComision = commissionPaymentMethods.has(metodo);
       if (metodo === "Credito" && !clienteId) {
         showToast("Debe seleccionar un cliente para ventas a crédito.", "warning");
@@ -2007,9 +2293,23 @@
       }
 
       const subtotal = appState.cart.reduce((s, i) => s + i.precio * i.cantidad, 0);
+      const descuentoTotal = appState.cart.reduce((sum, item) => sum + getItemDiscountTotal(item), 0);
       const iva = 0;
-      const comisionValor = requiereComision ? calcularValorComision(subtotal + iva, comisionInput) : 0;
-      const total = subtotal + iva + (metodo === "QR" ? 0 : comisionValor);
+      const subtotalNeto = subtotal - descuentoTotal;
+      const comisionValor = requiereComision ? calcularValorComision(subtotalNeto + iva, comisionInput) : 0;
+      const total = subtotalNeto + iva + (metodo === "QR" ? 0 : comisionValor);
+      if (metodo === "Credito" && (!Number.isFinite(abonoInicial) || abonoInicial < 0 || abonoInicial > total)) {
+        showToast("El abono inicial debe estar entre cero y el total de la venta.", "warning");
+        return;
+      }
+      if (abonoInicial > 0 && (!metodoAbonoInicial || metodoAbonoInicial === "Credito")) {
+        showToast("Selecciona el método de pago del abono inicial.", "warning");
+        return;
+      }
+      if (abonoInicial > 0 && commissionPaymentMethods.has(metodoAbonoInicial) && !commissionRates.includes(porcentajeAbonoInicial)) {
+        showToast("Selecciona el porcentaje de comisión para el método del abono.", "warning");
+        return;
+      }
       const { porcentaje: comisionEntidadPorcentaje, valor: comisionEntidadValor } = calcularComisionEntidad(metodo, total, comisionInput, comisionValor);
       const netoRecibido = Math.max(0, total - comisionEntidadValor);
 
@@ -2020,7 +2320,7 @@
         items: appState.cart.map(c => {
           if (c.tipo === "servicio" || c.tipo === "cartera_antigua") return { ...c };
           const product = db.products.find(entry => entry.id === c.productId);
-          return { productId: c.productId, cantidad: c.cantidad, precio: c.precio, stockDescontado: Boolean(product && product.stockActual > 0) };
+          return { productId: c.productId, cantidad: c.cantidad, precio: c.precio, descuentoTipo: c.descuentoTipo === "porcentaje" ? "porcentaje" : "fijo", descuentoValor: Number(c.descuentoValor) || 0, stockDescontado: Boolean(product && product.stockActual > 0) };
         }),
         subtotal,
         iva,
@@ -2041,6 +2341,20 @@
         monto: total,
         fecha: sale.fecha
       } : null;
+      const initialPaymentDetails = abonoInicial > 0
+        ? calcularDetallesAbono(abonoInicial, metodoAbonoInicial, porcentajeAbonoInicial)
+        : null;
+      const initialPayment = customerCredit && initialPaymentDetails ? {
+        id: uid("pay"),
+        creditId: customerCredit.id,
+        monto: abonoInicial,
+        fecha: sale.fecha,
+        metodoPago: metodoAbonoInicial,
+        observaciones: "Abono inicial en factura",
+        saldoAnterior: total,
+        saldoPosterior: Number((total - abonoInicial).toFixed(2)),
+        ...initialPaymentDetails
+      } : null;
       sale.items.forEach(item => {
         if (item.tipo === "servicio" || item.tipo === "cartera_antigua") return;
         const product = db.products.find(p => p.id === item.productId);
@@ -2051,6 +2365,7 @@
       db.sales.push(sale);
       db.legacyDebts = [...debtsBefore, ...legacyItems.filter(item => !debtsBefore.some(debt => debt.id === item.debtId)).map(item => ({ id: item.debtId, customerId: item.customerId, monto: item.montoInicial, fecha: sale.fecha }))];
       if (customerCredit) db.customerCredits.push(customerCredit);
+      if (initialPayment) db.customerPayments.push(initialPayment);
       appState.savingSale = true;
       const saved = await saveDB();
       appState.savingSale = false;
@@ -2058,6 +2373,7 @@
         db.sales = db.sales.filter(entry => entry.id !== sale.id);
         db.legacyDebts = debtsBefore;
         if (customerCredit) db.customerCredits = db.customerCredits.filter(credit => credit.id !== customerCredit.id);
+        if (initialPayment) db.customerPayments = db.customerPayments.filter(payment => payment.id !== initialPayment.id);
         db.products.forEach(product => { product.stockActual = stockBefore.get(product.id); });
         return;
       }
@@ -2081,16 +2397,27 @@
       if (!sale) return;
 
       const customer = sale.clienteId ? db.customers.find(c => c.id === sale.clienteId) : null;
+      const descuentoTotal = getSaleDiscountTotal(sale);
+      const saleCredit = (db.customerCredits || []).find(credit => credit.saleId === saleId);
+      const creditPayments = saleCredit ? (db.customerPayments || []).filter(payment => payment.creditId === saleCredit.id) : [];
+      const creditPaymentsTotal = creditPayments.reduce((sum, payment) => sum + Number(payment.monto || 0), 0);
+      const creditPaymentsCommission = creditPayments.reduce((sum, payment) => sum + Number(payment.comisionValor || 0), 0);
+      const creditPaymentsCharged = creditPayments.reduce((sum, payment) => sum + Number(payment.montoCobrado ?? payment.monto ?? 0), 0);
+      const creditBalance = saleCredit ? getCreditBalance(saleCredit) : 0;
       const itemsHtml = sale.items.map(item => {
         const product = db.products.find(p => p.id === item.productId);
         const description = ["servicio", "cartera_antigua"].includes(item.tipo) ? `${escapeHtml(item.nombre)}${item.tipo === "cartera_antigua" ? `<p class="text-xs break-words">${escapeHtml(legacyPaymentDetail(item))}</p>` : ""}${item.observaciones ? `<p class="text-xs text-slate-500 break-words">${escapeHtml(item.observaciones)}</p>` : ""}` : escapeHtml(product?.nombre || "Producto");
-        return `<tr class="border-b text-sm"><td class="px-2 py-1 break-words">${description}</td><td class="px-2 py-1 text-right">${item.cantidad}</td><td class="px-2 py-1 text-right">${formatCurrency(item.precio)}</td><td class="px-2 py-1 text-right">${formatCurrency(item.cantidad * item.precio)}</td></tr>`;
+        const lineSubtotal = item.cantidad * item.precio;
+        const discount = getItemDiscountTotal(item);
+        return `<tr class="border-b text-sm"><td class="px-2 py-1 break-words">${description}</td><td class="px-2 py-1 text-right">${item.cantidad}</td><td class="px-2 py-1 text-right">${formatCurrency(item.precio)}</td><td class="px-2 py-1 text-right">${formatCurrency(lineSubtotal)}</td><td class="px-2 py-1 text-right">${discount > 0 ? `-${formatCurrency(discount)}` : "-"}</td><td class="px-2 py-1 text-right font-semibold">${formatCurrency(lineSubtotal - discount)}</td></tr>`;
       }).join("");
       const receiptItemsHtml = sale.items.map(item => {
         const product = db.products.find(entry => entry.id === item.productId);
         const description = ["servicio", "cartera_antigua"].includes(item.tipo) ? item.nombre : product?.nombre || "Producto";
         const notes = `${item.tipo === "cartera_antigua" ? `<p class="receipt-small">${escapeHtml(legacyPaymentDetail(item))}</p>` : ""}${["servicio", "cartera_antigua"].includes(item.tipo) && item.observaciones ? `<p class="receipt-small">${escapeHtml(item.observaciones)}</p>` : ""}`;
-        return `<article class="receipt-line"><p class="receipt-item-name">${escapeHtml(description)}</p>${notes}<div class="receipt-detail"><span>${item.cantidad} x ${formatCurrency(item.precio)}</span><strong class="receipt-amount">${formatCurrency(item.cantidad * item.precio)}</strong></div></article>`;
+        const lineSubtotal = item.cantidad * item.precio;
+        const discount = getItemDiscountTotal(item);
+        return `<article class="receipt-line"><p class="receipt-item-name">${escapeHtml(description)}</p>${notes}<div class="receipt-detail"><span>${item.cantidad} x ${formatCurrency(item.precio)}</span><span class="receipt-amount">${formatCurrency(lineSubtotal)}</span></div>${discount > 0 ? `<div class="receipt-detail"><span>Descuento</span><span class="receipt-amount">-${formatCurrency(discount)}</span></div>` : ""}<div class="receipt-detail"><strong>Total línea</strong><strong class="receipt-amount">${formatCurrency(lineSubtotal - discount)}</strong></div></article>`;
       }).join("");
       const receiptCustomer = customer ? `${escapeHtml(customer.nombre)}${customer.documento ? `<br><span class="receipt-small">Doc: ${escapeHtml(customer.documento)}</span>` : ""}` : "Consumidor final";
       const receiptHtml = `
@@ -2111,8 +2438,9 @@
           ${receiptItemsHtml}
           <div class="receipt-separator"></div>
           <div class="receipt-detail"><span>Subtotal</span><span class="receipt-amount">${formatCurrency(sale.subtotal)}</span></div>
-          <div class="receipt-detail"><span>IVA</span><span class="receipt-amount">${formatCurrency(sale.iva || 0)}</span></div>
+          ${descuentoTotal > 0 ? `<div class="receipt-detail"><span>Descuento</span><span class="receipt-amount">-${formatCurrency(descuentoTotal)}</span></div>` : ""}
           ${sale.comisionPorcentaje == null || sale.metodoPago === "QR" ? "" : `<div class="receipt-detail"><span>Comisión (${Number(sale.comisionPorcentaje)}%)</span><span class="receipt-amount">${formatCurrency(sale.comisionValor)}</span></div>`}
+          ${saleCredit ? `<div class="receipt-detail"><span>Abonos aplicados al crédito</span><span class="receipt-amount">-${formatCurrency(creditPaymentsTotal)}</span></div>${creditPaymentsCommission > 0 ? `<div class="receipt-detail"><span>Comisiones de abonos</span><span class="receipt-amount">${formatCurrency(creditPaymentsCommission)}</span></div>` : ""}<div class="receipt-detail"><span>Total cobrado en abonos</span><span class="receipt-amount">${formatCurrency(creditPaymentsCharged)}</span></div><div class="receipt-detail"><strong>Saldo pendiente</strong><strong class="receipt-amount">${formatCurrency(creditBalance)}</strong></div>` : ""}
           <div class="receipt-separator"></div>
           <div class="receipt-detail receipt-total"><span>TOTAL</span><span class="receipt-amount">${formatCurrency(sale.total)}</span></div>
           <div class="receipt-separator"></div>
@@ -2147,15 +2475,16 @@
 
           <table class="w-full mb-3 text-sm border-collapse">
             <thead class="bg-slate-900 text-white">
-              <tr><th class="px-2 py-1 text-left">Descripcion</th><th class="px-2 py-1 text-right">Qty</th><th class="px-2 py-1 text-right">P.Unit</th><th class="px-2 py-1 text-right">Subtotal</th></tr>
+              <tr><th class="px-2 py-1 text-left">Descripcion</th><th class="px-2 py-1 text-right">Qty</th><th class="px-2 py-1 text-right">P.Unit</th><th class="px-2 py-1 text-right">Subtotal</th><th class="px-2 py-1 text-right">Desc.</th><th class="px-2 py-1 text-right">Total</th></tr>
             </thead>
             <tbody>${itemsHtml}</tbody>
           </table>
 
           <div class="bg-slate-50 p-2 rounded-lg text-sm space-y-1 border-2 border-slate-900">
             <div class="flex justify-between"><span>Subtotal:</span><span class="font-semibold">${formatCurrency(sale.subtotal)}</span></div>
-            <div class="flex justify-between"><span>IVA:</span><span class="font-semibold">${formatCurrency(sale.iva || 0)}</span></div>
+            ${descuentoTotal > 0 ? `<div class="flex justify-between text-red-700"><span>Descuento:</span><span class="font-semibold">-${formatCurrency(descuentoTotal)}</span></div>` : ""}
             ${sale.comisionPorcentaje == null || sale.metodoPago === "QR" ? "" : `<div class="flex justify-between"><span>Comisión (${Number(sale.comisionPorcentaje)}%):</span><span class="font-semibold">${formatCurrency(sale.comisionValor)}</span></div>`}
+            ${saleCredit ? `<div class="flex justify-between"><span>Abonos aplicados al crédito:</span><span class="font-semibold">-${formatCurrency(creditPaymentsTotal)}</span></div>${creditPaymentsCommission > 0 ? `<div class="flex justify-between"><span>Comisiones de abonos:</span><span class="font-semibold">${formatCurrency(creditPaymentsCommission)}</span></div>` : ""}<div class="flex justify-between"><span>Total cobrado en abonos:</span><span class="font-semibold">${formatCurrency(creditPaymentsCharged)}</span></div><div class="flex justify-between"><span class="font-bold">Saldo pendiente:</span><span class="font-bold">${formatCurrency(creditBalance)}</span></div>` : ""}
             <div class="flex justify-between border-t pt-1 text-base"><span class="font-bold">TOTAL:</span><span class="font-bold">${formatCurrency(sale.total)}</span></div>
           </div>
         </div>

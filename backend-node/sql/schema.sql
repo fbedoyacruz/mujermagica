@@ -68,6 +68,14 @@ CREATE TABLE IF NOT EXISTS customer_payments (
   fecha DATETIME NOT NULL,
   metodo_pago VARCHAR(50) NOT NULL,
   observaciones VARCHAR(500),
+  comision_porcentaje DECIMAL(5,2) NULL,
+  comision_valor DECIMAL(12,2) NOT NULL DEFAULT 0,
+  comision_entidad_porcentaje DECIMAL(5,2) NULL,
+  comision_entidad_valor DECIMAL(12,2) NOT NULL DEFAULT 0,
+  monto_cobrado DECIMAL(12,2) NULL,
+  neto_recibido DECIMAL(12,2) NULL,
+  saldo_anterior DECIMAL(12,2) NULL,
+  saldo_posterior DECIMAL(12,2) NULL,
   INDEX idx_customer_payments_credit_fecha (credit_id, fecha),
   FOREIGN KEY (credit_id) REFERENCES customer_credits(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
@@ -79,6 +87,8 @@ CREATE TABLE IF NOT EXISTS sale_items (
   cantidad INT NOT NULL,
   precio DECIMAL(12,2) NOT NULL,
   stock_descontado BOOLEAN NOT NULL DEFAULT TRUE,
+  descuento_tipo VARCHAR(20) NOT NULL DEFAULT 'fijo',
+  descuento_valor DECIMAL(12,2) NOT NULL DEFAULT 0,
   FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 

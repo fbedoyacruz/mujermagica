@@ -87,6 +87,21 @@ anteriores: Alisado, Terapia capilar, Hidratacion, Henna y Lifting de pestanas.
    vacio significa desconocido, no cero: esa ganancia se excluye del indicador
    de ganancia conocida. Un costo cero explicito si participa en el calculo.
 
+## Comprobantes de abonos a creditos por factura
+
+- En **Cartera > Creditos por factura > Registrar abono**, al guardar se abre
+   un comprobante independiente con la deuda antes del pago, el valor abonado
+   y el saldo pendiente. Incluye cliente, fecha, metodo y factura de origen.
+- Usa **Imprimir** para obtener el recibo termico de 58 mm. No incluye IVA,
+   retenciones ni netos internos, y no registra una venta adicional.
+- En **Historial de abonos > Ver comprobante** puedes volver a imprimirlo.
+   Los nuevos abonos conservan sus saldos originales aunque se registren
+   pagos posteriores. Para abonos antiguos sin esos datos, se reconstruyen
+   los saldos segun su historial cronologico.
+- Reinicia el backend y recarga la pagina despues de actualizar: el inicio
+   agrega automaticamente `saldo_anterior` y `saldo_posterior` a
+   `customer_payments`, sin borrar los pagos existentes.
+
 ## Cartera antigua
 
 - En **Punto de Venta > Cartera antigua**, selecciona un cliente registrado.

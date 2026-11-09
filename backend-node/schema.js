@@ -17,6 +17,23 @@ async function ensureSchema() {
       await conn.query(statement);
     }
 
+    const customerPaymentColumns = [
+      ["comision_porcentaje", "DECIMAL(5,2) NULL"],
+      ["comision_valor", "DECIMAL(12,2) NOT NULL DEFAULT 0"],
+      ["comision_entidad_porcentaje", "DECIMAL(5,2) NULL"],
+      ["comision_entidad_valor", "DECIMAL(12,2) NOT NULL DEFAULT 0"],
+      ["monto_cobrado", "DECIMAL(12,2) NULL"],
+      ["neto_recibido", "DECIMAL(12,2) NULL"],
+      ["saldo_anterior", "DECIMAL(12,2) NULL"],
+      ["saldo_posterior", "DECIMAL(12,2) NULL"]
+    ];
+    for (const [column, definition] of customerPaymentColumns) {
+      const [existingColumn] = await conn.query(`SHOW COLUMNS FROM customer_payments LIKE '${column}'`);
+      if (existingColumn.length === 0) {
+        await conn.query(`ALTER TABLE customer_payments ADD COLUMN ${column} ${definition}`);
+      }
+    }
+
     const [customerBirthDateColumn] = await conn.query("SHOW COLUMNS FROM customers LIKE 'fecha_nacimiento'");
     if (customerBirthDateColumn.length === 0) {
       await conn.query("ALTER TABLE customers ADD COLUMN fecha_nacimiento DATE NULL");
@@ -75,6 +92,16 @@ async function ensureSchema() {
     const [stockDeductedColumn] = await conn.query("SHOW COLUMNS FROM sale_items LIKE 'stock_descontado'");
     if (stockDeductedColumn.length === 0) {
       await conn.query("ALTER TABLE sale_items ADD COLUMN stock_descontado BOOLEAN NOT NULL DEFAULT TRUE");
+    }
+
+    const [discountTypeColumn] = await conn.query("SHOW COLUMNS FROM sale_items LIKE 'descuento_tipo'");
+    if (discountTypeColumn.length === 0) {
+      await conn.query("ALTER TABLE sale_items ADD COLUMN descuento_tipo VARCHAR(20) NOT NULL DEFAULT 'fijo'");
+    }
+
+    const [discountValueColumn] = await conn.query("SHOW COLUMNS FROM sale_items LIKE 'descuento_valor'");
+    if (discountValueColumn.length === 0) {
+      await conn.query("ALTER TABLE sale_items ADD COLUMN descuento_valor DECIMAL(12,2) NOT NULL DEFAULT 0");
     }
   } finally {
     conn.release();

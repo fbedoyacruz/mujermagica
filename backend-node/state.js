@@ -15,10 +15,10 @@ async function getState() {
     "SELECT id, sale_id AS saleId, customer_id AS customerId, monto, fecha FROM customer_credits ORDER BY fecha"
   );
   const [customerPayments] = await pool.query(
-    "SELECT id, credit_id AS creditId, monto, fecha, metodo_pago AS metodoPago, observaciones FROM customer_payments ORDER BY fecha"
+    "SELECT id, credit_id AS creditId, monto, fecha, metodo_pago AS metodoPago, observaciones, comision_porcentaje AS comisionPorcentaje, comision_valor AS comisionValor, comision_entidad_porcentaje AS comisionEntidadPorcentaje, comision_entidad_valor AS comisionEntidadValor, monto_cobrado AS montoCobrado, neto_recibido AS netoRecibido, saldo_anterior AS saldoAnterior, saldo_posterior AS saldoPosterior FROM customer_payments ORDER BY fecha, id"
   );
   const [saleItems] = await pool.query(
-    "SELECT sale_id AS saleId, product_id AS productId, cantidad, precio, stock_descontado AS stockDescontado FROM sale_items"
+    "SELECT sale_id AS saleId, product_id AS productId, cantidad, precio, stock_descontado AS stockDescontado, descuento_tipo AS descuentoTipo, descuento_valor AS descuentoValor FROM sale_items"
   );
   const [services] = await pool.query("SELECT id, nombre, precio_sugerido AS precioSugerido, costo_sugerido AS costoSugerido, activo FROM services");
   const [serviceItems] = await pool.query("SELECT sale_id AS saleId, service_id AS serviceId, nombre, cantidad, precio, costo, observaciones FROM sale_service_items");
@@ -37,7 +37,7 @@ async function getState() {
   const itemsBySale = new Map();
   for (const item of saleItems) {
     if (!itemsBySale.has(item.saleId)) itemsBySale.set(item.saleId, []);
-    itemsBySale.get(item.saleId).push({ productId: item.productId, cantidad: item.cantidad, precio: Number(item.precio), stockDescontado: item.stockDescontado === undefined ? true : Boolean(item.stockDescontado) });
+    itemsBySale.get(item.saleId).push({ productId: item.productId, cantidad: item.cantidad, precio: Number(item.precio), stockDescontado: item.stockDescontado === undefined ? true : Boolean(item.stockDescontado), descuentoTipo: item.descuentoTipo || "fijo", descuentoValor: Number(item.descuentoValor || 0) });
   }
   for (const item of serviceItems) {
     if (!itemsBySale.has(item.saleId)) itemsBySale.set(item.saleId, []);
@@ -79,7 +79,18 @@ async function getState() {
       items: itemsBySale.get(s.id) || []
     })),
     customerCredits: customerCredits.map(credit => ({ ...credit, monto: Number(credit.monto) })),
-    customerPayments: customerPayments.map(payment => ({ ...payment, monto: Number(payment.monto) })),
+    customerPayments: customerPayments.map(payment => ({
+      ...payment,
+      monto: Number(payment.monto),
+      comisionPorcentaje: payment.comisionPorcentaje == null ? null : Number(payment.comisionPorcentaje),
+      comisionValor: Number(payment.comisionValor || 0),
+      comisionEntidadPorcentaje: payment.comisionEntidadPorcentaje == null ? null : Number(payment.comisionEntidadPorcentaje),
+      comisionEntidadValor: Number(payment.comisionEntidadValor || 0),
+      montoCobrado: payment.montoCobrado == null ? Number(payment.monto) : Number(payment.montoCobrado),
+      netoRecibido: payment.netoRecibido == null ? Number(payment.monto) : Number(payment.netoRecibido),
+      saldoAnterior: payment.saldoAnterior == null ? null : Number(payment.saldoAnterior),
+      saldoPosterior: payment.saldoPosterior == null ? null : Number(payment.saldoPosterior)
+    })),
     legacyDebts: legacyDebts.map(debt => ({ ...debt, monto: Number(debt.monto) })),
     purchases: purchases.map(p => ({
       ...p,
@@ -104,6 +115,14 @@ async function replaceState(state, authorizationCode) {
     legacyDebtCustomers.add(debt.customerId);
   }
   for (const sale of state.sales || []) {
+    for (const item of (sale.items || []).filter(entry => !["servicio", "cartera_antigua"].includes(entry.tipo))) {
+      const discountType = item.descuentoTipo ?? "fijo";
+      const discountValue = Number(item.descuentoValor ?? 0);
+      const maxDiscount = discountType === "porcentaje" ? 100 : Number(item.precio);
+      if (!["fijo", "porcentaje"].includes(discountType) || !Number.isFinite(discountValue) || discountValue < 0 || !Number.isFinite(maxDiscount) || maxDiscount < 0 || discountValue > maxDiscount) {
+        throw Object.assign(new Error("El descuento de un producto no es válido."), { status: 400 });
+      }
+    }
     const paidDebts = new Set();
     for (const item of (sale.items || []).filter(entry => entry.tipo === "cartera_antigua")) {
       const debt = (state.legacyDebts || []).find(entry => entry.id === item.debtId);
@@ -191,8 +210,8 @@ async function replaceState(state, authorizationCode) {
           ]);
           continue;
         }
-        await conn.query("INSERT INTO sale_items (sale_id, product_id, cantidad, precio, stock_descontado) VALUES (?, ?, ?, ?, ?)", [
-          s.id, item.productId, item.cantidad, item.precio, item.stockDescontado !== false
+        await conn.query("INSERT INTO sale_items (sale_id, product_id, cantidad, precio, stock_descontado, descuento_tipo, descuento_valor) VALUES (?, ?, ?, ?, ?, ?, ?)", [
+          s.id, item.productId, item.cantidad, item.precio, item.stockDescontado !== false, item.descuentoTipo ?? "fijo", item.descuentoValor ?? 0
         ]);
       }
     }
@@ -204,8 +223,8 @@ async function replaceState(state, authorizationCode) {
     }
 
     for (const payment of state.customerPayments || []) {
-      await conn.query("INSERT INTO customer_payments (id, credit_id, monto, fecha, metodo_pago, observaciones) VALUES (?, ?, ?, ?, ?, ?)", [
-        payment.id, payment.creditId, payment.monto, new Date(payment.fecha), payment.metodoPago, payment.observaciones || null
+      await conn.query("INSERT INTO customer_payments (id, credit_id, monto, fecha, metodo_pago, observaciones, comision_porcentaje, comision_valor, comision_entidad_porcentaje, comision_entidad_valor, monto_cobrado, neto_recibido, saldo_anterior, saldo_posterior) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", [
+        payment.id, payment.creditId, payment.monto, new Date(payment.fecha), payment.metodoPago, payment.observaciones || null, payment.comisionPorcentaje ?? null, payment.comisionValor || 0, payment.comisionEntidadPorcentaje ?? null, payment.comisionEntidadValor || 0, payment.montoCobrado ?? payment.monto, payment.netoRecibido ?? payment.monto, payment.saldoAnterior ?? null, payment.saldoPosterior ?? null
       ]);
     }
 
