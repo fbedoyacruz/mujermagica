@@ -145,6 +145,7 @@ test("migración de nacimiento agrega la columna solo si falta", async () => {
     for (const column of ["saldo_anterior", "saldo_posterior"]) {
       assert.equal(queries.filter(sql => sql === `ALTER TABLE customer_payments ADD COLUMN ${column} DECIMAL(12,2) NULL`).length, missing ? 1 : 0);
     }
+    assert.equal(queries.filter(sql => sql === "ALTER TABLE sale_items ADD COLUMN costo_compra DECIMAL(12,2) NULL").length, missing ? 1 : 0);
   }
 });
 
@@ -1366,6 +1367,226 @@ test("lectura conserva el nombre historico aunque cambie el catalogo", async () 
   assert.equal(state.customerPayments[0].netoRecibido, 150200);
   assert.equal(state.customerPayments[0].saldoAnterior, 500000);
   assert.equal(state.customerPayments[0].saldoPosterior, 350000);
+});
+
+test("inversion mensual resta costo vendido, no precio de venta ni descuentos", () => {
+  const state = fixture();
+  state.investmentMovements = [
+    { id: "opening", tipo: "inicial", monto: 10000000, fecha: "2026-10-10T12:00:00" },
+    { id: "entry", tipo: "entrada", monto: 4000000, fecha: "2026-10-20T12:00:00" }
+  ];
+  state.sales = [
+    { fecha: "2026-10-09T12:00:00", items: [{ productId: "product_1", cantidad: 1, precio: 9000000 }] },
+    { fecha: "2026-10-15T12:00:00", items: [
+      { productId: "product_1", cantidad: 1, precio: 6000000, costoCompra: 5000000, descuentoTipo: "fijo", descuentoValor: 1000000 },
+      { ...serviceItem }, { tipo: "cartera_antigua", precio: 999999, cantidad: 1 }
+    ] },
+    { fecha: "2026-11-05T12:00:00", items: [{ productId: "product_1", cantidad: 1, precio: 3000000, costoCompra: 2000000 }] }
+  ];
+  const app = frontend(state);
+  const october = app.calcularInversionMensual(state, "2026-10");
+  assert.equal(october.saldoInicial, 10000000);
+  assert.equal(october.ventas, 5000000);
+  assert.equal(october.entradas, 4000000);
+  assert.equal(october.saldo, 9000000);
+  const november = app.calcularInversionMensual(state, "2026-11");
+  assert.equal(november.saldoInicial, 9000000);
+  assert.equal(november.saldo, 7000000);
+  assert.equal(app.calcularInversionMensual(state, "2026-09"), null);
+  state.sales.push({ fecha: "2026-11-06T12:00:00", items: [{ productId: "product_1", cantidad: 1, precio: 9000000, costoCompra: 8000000 }] });
+  assert.equal(app.calcularInversionMensual(state, "2026-11").saldo, -1000000);
+});
+
+test("shampoo vendido en 40000 descuenta 28000 de inversion y conserva el costo al recargar", async () => {
+  const state = fixture();
+  state.products[0].precioCompra = 28000;
+  state.investmentMovements = [{ id: "opening", tipo: "inicial", monto: 42851755, fecha: "2026-01-01T00:00:00Z" }];
+  const app = frontend(state);
+  app.cartFixture = [{ productId: "product_1", nombre: "Shampoo", cantidad: 1, precio: 40000 }];
+  vm.runInContext("appState.cart = cartFixture; saveDB = async () => true;", app);
+  await app.confirmarVenta();
+  assert.equal(state.sales[0].total, 40000);
+  assert.equal(state.sales[0].items[0].costoCompra, 28000);
+  const date = new Date(state.sales[0].fecha);
+  const period = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  let summary = app.calcularInversionMensual(state, period);
+  assert.equal(summary.ventas, 28000);
+  assert.equal(summary.saldo, 42823755);
+  state.products[0].precioCompra = 35000;
+  const inserts = [];
+  const conn = { query: async (sql, values) => { if (sql.startsWith("INSERT INTO sale_items ")) inserts.push(values); return [[]]; }, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} };
+  await backend({ getConnection: async () => conn }).replaceState(state);
+  assert.equal(inserts[0][7], 28000);
+  const store = backend({ query: async sql => {
+    if (sql.includes("FROM sale_items")) return [[{ saleId: state.sales[0].id, productId: "product_1", cantidad: 1, precio: "40000.00", costoCompra: "28000.00", stockDescontado: 1 }]];
+    if (sql.includes("FROM sales")) return [[{ ...state.sales[0], items: undefined }]];
+    if (sql.includes("FROM investment_movements")) return [state.investmentMovements];
+    if (sql.includes("FROM products")) return [state.products];
+    return [[]];
+  } });
+  const reloaded = await store.getState();
+  summary = app.calcularInversionMensual(reloaded, period);
+  assert.equal(summary.ventas, 28000);
+  assert.equal(summary.saldo, 42823755);
+  assert.equal(summary.costosEstimados, false);
+  reloaded.sales[0].items[0].costoCompra = 0;
+  assert.equal(app.calcularInversionMensual(reloaded, period).ventas, 0);
+});
+
+test("ventas anteriores usan costo actual con aviso y excluyen productos sin salida de stock", () => {
+  const state = fixture();
+  state.products[0].precioCompra = 28000;
+  state.investmentMovements = [{ id: "opening", tipo: "inicial", monto: 42851755, fecha: "2026-10-01T00:00:00" }];
+  state.sales = [{ fecha: "2026-10-15T12:00:00", items: [
+    { productId: "product_1", cantidad: 1, precio: 40000 },
+    { productId: "product_1", cantidad: 1, precio: 40000, stockDescontado: false },
+    { ...serviceItem }, { tipo: "cartera_antigua", cantidad: 1, precio: 10000 }
+  ] }];
+  const app = frontend(state);
+  const summary = app.calcularInversionMensual(state, "2026-10");
+  assert.equal(summary.ventas, 28000);
+  assert.equal(summary.saldo, 42823755);
+  assert.equal(summary.costosEstimados, true);
+  app.setInvestmentPeriod("2026-10");
+  const markup = app.renderInvestmentSummary(state);
+  assert.match(markup, /Costo de productos vendidos/);
+  assert.match(markup, /ventas anteriores sin costo guardado/);
+});
+
+test("primera activacion usa inventario disponible a costo y conserva el saldo al recargar", async () => {
+  const state = fixture();
+  const app = frontend(state);
+  let prompt;
+  app.confirm = message => { prompt = message; return true; };
+  vm.runInContext("saveDB = async () => true;", app);
+  assert.match(app.renderInvestmentSummary(state), /Iniciar control con este saldo/);
+  assert.equal(app.getInventoryCost(state), 100000);
+  await app.iniciarInversionMensual();
+  assert.ok(prompt.includes(vm.runInContext("formatCurrency(100000)", app)));
+  assert.equal(state.investmentMovements[0].monto, 100000);
+  const originalDate = state.investmentMovements[0].fecha;
+  state.products[0].stockActual = 1;
+  await app.iniciarInversionMensual();
+  assert.equal(state.investmentMovements.length, 1);
+  assert.equal(state.investmentMovements[0].fecha, originalDate);
+  const reloaded = JSON.parse(JSON.stringify(state));
+  const restored = frontend(reloaded);
+  const date = new Date(originalDate);
+  const period = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  assert.equal(restored.calcularInversionMensual(reloaded, period).saldoInicial, 100000);
+  assert.equal(restored.getInventoryCost(reloaded), 10000);
+});
+
+test("activar inversion puede cancelarse o fallar sin conservar un saldo inicial falso", async () => {
+  const state = fixture();
+  const app = frontend(state);
+  app.confirm = () => false;
+  await app.iniciarInversionMensual();
+  assert.equal(state.investmentMovements, undefined);
+  app.confirm = () => true;
+  vm.runInContext("saveDB = async () => false;", app);
+  await app.iniciarInversionMensual();
+  assert.equal(state.investmentMovements, undefined);
+  assert.equal(app.calcularInversionMensual(state, "2026-11"), null);
+});
+
+test("entradas valorizan solo unidades agregadas al costo del momento sin revalorizar el historial", () => {
+  const state = fixture();
+  const app = frontend(state);
+  app.registrarEntradaInversion(state.products[0], 0);
+  assert.equal(state.investmentMovements, undefined);
+  state.investmentMovements = [{ id: "opening", tipo: "inicial", monto: 100000, fecha: "2026-11-01T12:00:00" }];
+  app.registrarEntradaInversion(state.products[0], 8);
+  assert.equal(state.investmentMovements[1].monto, 20000);
+  assert.equal(state.investmentMovements[1].productId, "product_1");
+  state.products[0].precioCompra = 15000;
+  app.registrarEntradaInversion(state.products[0], 10);
+  app.registrarEntradaInversion(state.products[0], 12);
+  assert.equal(state.investmentMovements.length, 2);
+  app.registrarEntradaInversion(state.products[0], 9);
+  assert.equal(state.investmentMovements[2].monto, 15000);
+  assert.equal(state.investmentMovements[1].monto, 20000);
+});
+
+test("selector de inversion es independiente y los meses sin control no muestran saldos inventados", () => {
+  const state = fixture();
+  state.investmentMovements = [{ id: "opening", tipo: "inicial", monto: 500000, fecha: "2026-10-10T12:00:00" }];
+  const app = frontend(state);
+  const salesPeriod = vm.runInContext("appState.periodo", app);
+  app.setInvestmentPeriod("2026-10");
+  assert.equal(vm.runInContext("appState.periodo", app), salesPeriod);
+  assert.match(app.renderInvestmentSummary(state), /id="investmentMonth".*value="2026-10"/);
+  assert.match(app.renderInvestmentSummary(state), /Saldo de inversión al cierre/);
+  app.setInvestmentPeriod("2026-09");
+  assert.match(app.renderInvestmentSummary(state), /Sin datos/);
+  app.setInvestmentPeriod("invalid");
+  assert.equal(vm.runInContext("appState.investmentPeriod", app), "2026-09");
+});
+
+test("formulario de productos registra entradas al guardar y revierte producto y entrada si falla", async () => {
+  for (const isNew of [false, true]) {
+    const state = fixture();
+    state.investmentMovements = [{ id: "opening", tipo: "inicial", monto: 100000, fecha: "2026-11-01T12:00:00Z" }];
+    let submit;
+    const elements = {
+      modalContent: { innerHTML: "", appendChild: () => {} },
+      modalBackdrop: { classList: { add: () => {}, remove: () => {} } },
+      btnCancelProduct: { addEventListener: () => {} },
+      productImageUpload: { addEventListener: () => {} },
+      productForm: { addEventListener: (event, handler) => { if (event === "submit") submit = handler; } },
+      productName: { value: "Shampoo" }, productCategory: { value: "Capilar" }, productBrand: { value: "Marca" },
+      productBarcode: { value: "" }, productPriceBuy: { value: "12000" }, productPriceSell: { value: "20000" },
+      productPriceWholesale: { value: "" }, productStock: { value: isNew ? "2" : "12" },
+      productMinStock: { value: "2" }, productProvider: { value: "" }, productImage: { value: "" }
+    };
+    const app = frontend(state, elements);
+    app.document.createElement = () => ({ innerHTML: "", className: "" });
+    app.showEditProductModal(isNew ? undefined : "product_1");
+    vm.runInContext("saveDB = async () => false;", app);
+    await submit({ preventDefault: () => {} });
+    assert.equal(state.products.length, 1);
+    assert.equal(state.products[0].stockActual, 10);
+    assert.equal(state.products[0].precioCompra, 10000);
+    assert.equal(state.investmentMovements.length, 1);
+    vm.runInContext("saveDB = async () => true;", app);
+    await submit({ preventDefault: () => {} });
+    assert.equal(state.products.length, isNew ? 2 : 1);
+    assert.equal(state.investmentMovements.length, 2);
+    assert.equal(state.investmentMovements[1].monto, 24000);
+    if (!isNew) {
+      await submit({ preventDefault: () => {} });
+      assert.equal(state.investmentMovements.length, 2);
+    }
+  }
+});
+
+test("inversion persiste en MySQL y los respaldos antiguos no borran el registro", async () => {
+  const queries = [];
+  const conn = { query: async (sql, values) => { queries.push({ sql, values }); return [[]]; }, beginTransaction: async () => {}, commit: async () => {}, rollback: async () => {}, release: () => {} };
+  const state = fixture();
+  state.investmentMovements = [
+    { id: "opening", tipo: "inicial", monto: 500000, fecha: "2026-10-10T12:00:00Z" },
+    { id: "entry", tipo: "entrada", monto: 50000, fecha: "2026-10-11T12:00:00Z", productId: "product_1" }
+  ];
+  const store = backend({ getConnection: async () => conn, query: async sql => sql.includes("FROM investment_movements") ?
+    [[{ id: "opening", tipo: "inicial", monto: "500000.00", fecha: "2026-10-10T12:00:00Z" }]] : [[]] });
+  await store.replaceState(state);
+  const inserts = queries.filter(query => query.sql.startsWith("INSERT INTO investment_movements "));
+  assert.equal(inserts.length, 2);
+  assert.equal(inserts[0].values[3], 500000);
+  assert.equal(inserts[1].values[3], 50000);
+  assert.equal(inserts[1].values[4], "product_1");
+  assert.equal((await store.getState()).investmentMovements[0].monto, 500000);
+  queries.length = 0;
+  await store.replaceState(fixture());
+  assert.equal(queries.some(query => query.sql === "DELETE FROM investment_movements"), false);
+  for (const invalid of [
+    [{ id: "entry", tipo: "entrada", monto: 1, fecha: "2026-10-10" }],
+    [{ id: "opening", tipo: "inicial", monto: -1, fecha: "2026-10-10" }],
+    [{ id: "opening", tipo: "inicial", monto: 1, fecha: "invalid" }]
+  ]) {
+    await assert.rejects(store.replaceState({ ...fixture(), investmentMovements: invalid }), error => error.status === 400);
+  }
 });
 
 test("dashboard muestra todos los productos con stock bajo sin limitar la lista a seis", () => {

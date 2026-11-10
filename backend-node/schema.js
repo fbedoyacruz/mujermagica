@@ -94,6 +94,11 @@ async function ensureSchema() {
       await conn.query("ALTER TABLE sale_items ADD COLUMN stock_descontado BOOLEAN NOT NULL DEFAULT TRUE");
     }
 
+    const [purchaseCostColumn] = await conn.query("SHOW COLUMNS FROM sale_items LIKE 'costo_compra'");
+    if (purchaseCostColumn.length === 0) {
+      await conn.query("ALTER TABLE sale_items ADD COLUMN costo_compra DECIMAL(12,2) NULL");
+    }
+
     const [discountTypeColumn] = await conn.query("SHOW COLUMNS FROM sale_items LIKE 'descuento_tipo'");
     if (discountTypeColumn.length === 0) {
       await conn.query("ALTER TABLE sale_items ADD COLUMN descuento_tipo VARCHAR(20) NOT NULL DEFAULT 'fijo'");

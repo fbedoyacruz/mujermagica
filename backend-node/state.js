@@ -17,8 +17,9 @@ async function getState() {
   const [customerPayments] = await pool.query(
     "SELECT id, credit_id AS creditId, monto, fecha, metodo_pago AS metodoPago, observaciones, comision_porcentaje AS comisionPorcentaje, comision_valor AS comisionValor, comision_entidad_porcentaje AS comisionEntidadPorcentaje, comision_entidad_valor AS comisionEntidadValor, monto_cobrado AS montoCobrado, neto_recibido AS netoRecibido, saldo_anterior AS saldoAnterior, saldo_posterior AS saldoPosterior FROM customer_payments ORDER BY fecha, id"
   );
+  const [investmentMovements] = await pool.query("SELECT id, fecha, tipo, monto, product_id AS productId FROM investment_movements ORDER BY fecha, id");
   const [saleItems] = await pool.query(
-    "SELECT sale_id AS saleId, product_id AS productId, cantidad, precio, stock_descontado AS stockDescontado, descuento_tipo AS descuentoTipo, descuento_valor AS descuentoValor FROM sale_items"
+    "SELECT sale_id AS saleId, product_id AS productId, cantidad, precio, stock_descontado AS stockDescontado, descuento_tipo AS descuentoTipo, descuento_valor AS descuentoValor, costo_compra AS costoCompra FROM sale_items"
   );
   const [services] = await pool.query("SELECT id, nombre, precio_sugerido AS precioSugerido, costo_sugerido AS costoSugerido, activo FROM services");
   const [serviceItems] = await pool.query("SELECT sale_id AS saleId, service_id AS serviceId, nombre, cantidad, precio, costo, observaciones FROM sale_service_items");
@@ -37,7 +38,7 @@ async function getState() {
   const itemsBySale = new Map();
   for (const item of saleItems) {
     if (!itemsBySale.has(item.saleId)) itemsBySale.set(item.saleId, []);
-    itemsBySale.get(item.saleId).push({ productId: item.productId, cantidad: item.cantidad, precio: Number(item.precio), stockDescontado: item.stockDescontado === undefined ? true : Boolean(item.stockDescontado), descuentoTipo: item.descuentoTipo || "fijo", descuentoValor: Number(item.descuentoValor || 0) });
+    itemsBySale.get(item.saleId).push({ productId: item.productId, cantidad: item.cantidad, precio: Number(item.precio), stockDescontado: item.stockDescontado === undefined ? true : Boolean(item.stockDescontado), descuentoTipo: item.descuentoTipo || "fijo", descuentoValor: Number(item.descuentoValor || 0), costoCompra: item.costoCompra == null ? null : Number(item.costoCompra) });
   }
   for (const item of serviceItems) {
     if (!itemsBySale.has(item.saleId)) itemsBySale.set(item.saleId, []);
@@ -98,6 +99,7 @@ async function getState() {
       total: Number(p.total),
       items: itemsByPurchase.get(p.id) || []
     })),
+    investmentMovements: investmentMovements.map(movement => ({ ...movement, monto: Number(movement.monto) })),
     movements,
     alerts: []
   };
@@ -105,6 +107,14 @@ async function getState() {
 
 // Reemplaza todo el contenido de las tablas con el estado recibido (snapshot completo, igual que localStorage)
 async function replaceState(state, authorizationCode) {
+  const investmentMovements = state.investmentMovements || [];
+  if (!Array.isArray(investmentMovements) || investmentMovements.filter(movement => movement.tipo === "inicial").length > 1 ||
+      investmentMovements.some(movement => !["inicial", "entrada"].includes(movement.tipo) || !movement.id ||
+        !Number.isFinite(new Date(movement.fecha).getTime()) || !Number.isFinite(Number(movement.monto)) ||
+        Number(movement.monto) < 0 || Number(movement.monto) > 9999999999.99) ||
+      (investmentMovements.length > 0 && !investmentMovements.some(movement => movement.tipo === "inicial"))) {
+    throw Object.assign(new Error("Los movimientos de inversión no son válidos."), { status: 400 });
+  }
   const legacyDebtCustomers = new Set();
   for (const debt of state.legacyDebts || []) {
     const amount = Number(debt.monto);
@@ -116,6 +126,9 @@ async function replaceState(state, authorizationCode) {
   }
   for (const sale of state.sales || []) {
     for (const item of (sale.items || []).filter(entry => !["servicio", "cartera_antigua"].includes(entry.tipo))) {
+      if (item.costoCompra != null && (!Number.isFinite(Number(item.costoCompra)) || Number(item.costoCompra) < 0)) {
+        throw Object.assign(new Error("El costo de compra de un producto vendido no es válido."), { status: 400 });
+      }
       const discountType = item.descuentoTipo ?? "fijo";
       const discountValue = Number(item.descuentoValor ?? 0);
       const maxDiscount = discountType === "porcentaje" ? 100 : Number(item.precio);
@@ -151,6 +164,15 @@ async function replaceState(state, authorizationCode) {
     }
     await conn.query("SET FOREIGN_KEY_CHECKS = 0");
 
+    // Los clientes anteriores no envian este campo: no borrar su historial.
+    if (state.investmentMovements !== undefined) {
+      await conn.query("DELETE FROM investment_movements");
+      for (const movement of investmentMovements) {
+        await conn.query("INSERT INTO investment_movements (id, fecha, tipo, monto, product_id) VALUES (?, ?, ?, ?, ?)", [
+          movement.id, new Date(movement.fecha), movement.tipo, movement.monto, movement.productId || null
+        ]);
+      }
+    }
     await conn.query("DELETE FROM sale_service_items");
     await conn.query("DELETE FROM sale_legacy_payments");
     await conn.query("DELETE FROM legacy_debts");
@@ -210,8 +232,8 @@ async function replaceState(state, authorizationCode) {
           ]);
           continue;
         }
-        await conn.query("INSERT INTO sale_items (sale_id, product_id, cantidad, precio, stock_descontado, descuento_tipo, descuento_valor) VALUES (?, ?, ?, ?, ?, ?, ?)", [
-          s.id, item.productId, item.cantidad, item.precio, item.stockDescontado !== false, item.descuentoTipo ?? "fijo", item.descuentoValor ?? 0
+        await conn.query("INSERT INTO sale_items (sale_id, product_id, cantidad, precio, stock_descontado, descuento_tipo, descuento_valor, costo_compra) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
+          s.id, item.productId, item.cantidad, item.precio, item.stockDescontado !== false, item.descuentoTipo ?? "fijo", item.descuentoValor ?? 0, item.costoCompra ?? null
         ]);
       }
     }

@@ -49,6 +49,36 @@ El dashboard muestra todos los productos cuyo stock actual es menor que el
 stock minimo, sin limitar la lista de alertas a seis productos. El indicador
 **Stock bajo** corresponde al total de esa misma lista.
 
+## Inversion mensual
+
+- **Inventario actual a costo** muestra la suma de stock disponible por precio
+  de compra. Siempre corresponde a las existencias actuales, no a ventas.
+- En **Inversion acumulada mensual**, se muestra ese importe y se confirma
+  **Iniciar control con este saldo** una sola vez. El saldo inicial se guarda
+  con fecha y hora; no se descuentan ventas anteriores a la activacion.
+- El selector de mes es independiente del periodo de ventas del dashboard.
+  Cada mes calcula: saldo inicial + entradas de productos a costo - costo
+  de los productos vendidos (cantidad por costo unitario de compra).
+  El precio de venta, los descuentos y las comisiones no afectan este saldo.
+  Servicios y abonos de cartera no participan. El saldo se arrastra entre
+  meses. Los ajustes manuales de existencias o de costo pueden producir
+  diferencias respecto al inventario fisico actual.
+  Las ventas nuevas guardan el costo unitario para que los cambios de costo
+  posteriores no alteren los cierres. Para ventas anteriores sin ese dato,
+  se usa el costo actual del producto y se muestra una advertencia de estimacion.
+- Crear productos con stock o aumentar el stock al editarlos registra una
+  entrada por las unidades agregadas al costo indicado en ese momento.
+  Guardar sin aumentar stock, cambiar solo el costo, reducir stock o devolver
+  unidades al eliminar una venta no registra compras nuevas. Los cambios de
+  costo posteriores no revalorizan entradas anteriores.
+- El primer mes solo incluye movimientos posteriores a la activacion.
+  Los meses anteriores muestran **Sin datos**, no valores estimados.
+  Las entradas y el saldo inicial se conservan en MySQL y en respaldos JSON.
+  No se reconstruyen compras historicas sin fecha ni aumentos anteriores.
+- Reinicia el backend para crear `investment_movements` y agregar
+  `sale_items.costo_compra`, y recarga la pagina.
+  Los respaldos antiguos sin ese campo conservan el registro existente.
+
 ## Autorizacion para eliminar ventas
 
 - Configura `SALE_DELETE_AUTH_CODE` en el archivo `.env` del backend y reinicia

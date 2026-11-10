@@ -191,6 +191,7 @@
         state.customerCredits = Array.isArray(state.customerCredits) ? state.customerCredits : [];
         state.customerPayments = Array.isArray(state.customerPayments) ? state.customerPayments : [];
         state.legacyDebts = Array.isArray(state.legacyDebts) ? state.legacyDebts : [];
+        state.investmentMovements = Array.isArray(state.investmentMovements) ? state.investmentMovements : [];
         return state;
       } catch (e) {
         console.error("Error cargando BD desde MySQL:", e);
@@ -311,6 +312,7 @@
       sales: generateDefaultSales(),
       customerCredits: [],
       customerPayments: [],
+      investmentMovements: [],
       purchases: [],
       movements: [],
       alerts: []
@@ -528,14 +530,116 @@
       }).sort((a, b) => b.total - a.total).slice(0, limite);
     }
 
+    function getInventoryCost(state = db) {
+      return state.products.reduce((total, product) => total + Number(product.stockActual) * Number(product.precioCompra), 0);
+    }
+
+    async function iniciarInversionMensual() {
+      if (appState.savingInvestment || (db.investmentMovements || []).some(movement => movement.tipo === "inicial")) return;
+      const monto = Number(getInventoryCost().toFixed(2));
+      if (!Number.isFinite(monto) || monto < 0) {
+        showToast("Revisa el stock y el costo de los productos antes de iniciar el control.", "warning");
+        return;
+      }
+      if (!confirm(`La suma actual de los productos a costo es ${formatCurrency(monto)}. ¿Usarla como saldo inicial desde hoy? No se incluirán ventas ni entradas anteriores a este momento.`)) return;
+      const previous = db.investmentMovements;
+      db.investmentMovements = [{ id: uid("inv"), fecha: new Date().toISOString(), tipo: "inicial", monto }];
+      appState.savingInvestment = true;
+      const saved = await saveDB();
+      appState.savingInvestment = false;
+      if (!saved) {
+        db.investmentMovements = previous;
+        return;
+      }
+      showToast("Control de inversión mensual iniciado", "success");
+      renderView();
+    }
+
+    function registrarEntradaInversion(product, previousStock = 0) {
+      if (!(db.investmentMovements || []).some(movement => movement.tipo === "inicial")) return;
+      const quantity = Number(product.stockActual) - Number(previousStock);
+      if (quantity <= 0) return;
+      db.investmentMovements.push({
+        id: uid("inv"), fecha: new Date().toISOString(), tipo: "entrada",
+        monto: Number((quantity * Number(product.precioCompra)).toFixed(2)), productId: product.id
+      });
+    }
+
+    function calcularInversionMensual(state, period) {
+      const opening = (state.investmentMovements || []).find(movement => movement.tipo === "inicial");
+      if (!opening) return null;
+      const [year, month] = period.split("-").map(Number);
+      const start = new Date(year, month - 1, 1);
+      const end = new Date(year, month, 1);
+      const openingDate = new Date(opening.fecha);
+      if (end <= openingDate) return null;
+      let saldoInicial = Number(opening.monto);
+      let entradas = 0;
+      let ventas = 0;
+      let costosEstimados = false;
+      for (const movement of state.investmentMovements) {
+        const date = new Date(movement.fecha);
+        if (movement.tipo !== "entrada" || date < openingDate || date >= end) continue;
+        if (date < start) saldoInicial += Number(movement.monto);
+        else entradas += Number(movement.monto);
+      }
+      for (const sale of state.sales) {
+        const date = new Date(sale.fecha);
+        if (date < openingDate || date >= end) continue;
+        const amount = sale.items.filter(item => !item.tipo && item.productId && item.stockDescontado !== false)
+          .reduce((total, item) => {
+            if (item.costoCompra == null) costosEstimados = true;
+            const cost = item.costoCompra ?? state.products.find(product => product.id === item.productId)?.precioCompra;
+            if (cost == null || !Number.isFinite(Number(cost)) || Number(cost) < 0) {
+              throw new Error("No se encontró un costo válido para calcular la inversión.");
+            }
+            return total + Number(item.cantidad) * Number(cost);
+          }, 0);
+        if (date < start) saldoInicial -= amount;
+        else ventas += amount;
+      }
+      return { saldoInicial, entradas, ventas, saldo: saldoInicial + entradas - ventas, costosEstimados };
+    }
+
+    function setInvestmentPeriod(period) {
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(period) || period > getLocalDateInputValue(new Date()).slice(0, 7)) {
+        showToast("Selecciona un mes válido para consultar la inversión.", "warning");
+        return;
+      }
+      appState.investmentPeriod = period;
+      renderView();
+    }
+
+    function renderInvestmentSummary(state) {
+      const opening = (state.investmentMovements || []).find(movement => movement.tipo === "inicial");
+      const period = appState.investmentPeriod || getLocalDateInputValue(new Date()).slice(0, 7);
+      const currentPeriod = getLocalDateInputValue(new Date()).slice(0, 7);
+      if (!opening) return `<section class="view-card"><h3 class="text-lg font-bold">Inversi&oacute;n acumulada mensual</h3>
+        <p class="mt-2 text-sm">La suma actual de los productos a costo es <strong>${formatCurrency(getInventoryCost(state))}</strong>.</p>
+        <p class="mt-1 text-xs text-slate-500">Se usar&aacute; como saldo inicial desde el momento de activar el control. No se reconstruyen meses anteriores. Los aumentos de stock al crear o editar productos se registrar&aacute;n como entradas a costo.</p>
+        <button type="button" onclick="iniciarInversionMensual()" class="mt-3 rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white">Iniciar control con este saldo</button></section>`;
+      const summary = calcularInversionMensual(state, period);
+      const values = summary ? `<div class="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <div><p class="text-xs text-slate-500">Saldo inicial del per&iacute;odo</p><p class="text-xl font-bold">${formatCurrency(summary.saldoInicial)}</p></div>
+        <div><p class="text-xs text-slate-500">Entradas de productos a costo</p><p class="text-xl font-bold">${formatCurrency(summary.entradas)}</p></div>
+        <div><p class="text-xs text-slate-500">Costo de productos vendidos</p><p class="text-xl font-bold">${formatCurrency(summary.ventas)}</p></div>
+        <div><p class="text-xs text-slate-500">${period === currentPeriod ? "Saldo de inversión actual" : "Saldo de inversión al cierre"}</p><p class="text-xl font-bold">${formatCurrency(summary.saldo)}</p></div>
+      </div>` : `<p class="mt-3 text-sm text-amber-700">Sin datos: el control no estaba activo en ese mes.</p>`;
+      return `<section class="view-card"><div class="flex flex-wrap items-center justify-between gap-3">
+        <h3 class="text-lg font-bold">Inversi&oacute;n acumulada mensual</h3>
+        <div><label for="investmentMonth" class="mr-2 text-sm font-semibold">Mes</label><input id="investmentMonth" type="month" value="${period}" max="${currentPeriod}" onchange="setInvestmentPeriod(this.value)" class="rounded-lg border px-3 py-2 text-sm" /></div>
+        </div><p class="mt-2 text-xs text-slate-500">Control iniciado: ${escapeHtml(formatDate(opening.fecha))}. Saldo inicial: ${formatCurrency(opening.monto)}.</p>
+        ${values}${summary?.costosEstimados ? `<p class="mt-2 text-xs text-amber-700">Hay ventas anteriores sin costo guardado: se usa el costo actual del producto como estimaci&oacute;n.</p>` : ""}
+        <p class="mt-3 text-xs text-slate-500">Saldo inicial + entradas a costo - costo de productos vendidos. El precio de venta, los descuentos y las comisiones no modifican este saldo. No incluye servicios ni abonos. El primer mes comprende solo los movimientos posteriores al inicio.</p></section>`;
+    }
+
     // ==================== RENDERIZADO ====================
     function renderDashboard(st, search = "") {
       calcularAlertas();
       const conAlerta = st.products.filter(p => p.stockActual < p.stockMinimo);
       const stockBajo = conAlerta.length;
       const stockCritico = st.products.filter(p => p.stockActual === 0).length;
-      const valorInventario = st.products.reduce((s, p) => s + (p.stockActual * p.precioCompra), 0);
-      const inversionAcumulada = valorInventario + calcularMetricasGenerales(st.sales).totalCostoProductos;
+      const valorInventario = getInventoryCost(st);
       const metricas = calcularMetricasGenerales(filterSalesByPeriod(st.sales, appState.periodo));
 
       const alertCards = conAlerta.map(p => {
@@ -557,8 +661,9 @@
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.totalVentas)}</p></div>
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Stock bajo</p><p class="mt-2 text-2xl font-bold text-amber-700">${stockBajo}</p><p class="text-xs text-slate-500 mt-1">Actual</p></div>
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">${metricas.serviciosSinCosto ? "Ganancia conocida" : "Ganancia"}</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(metricas.gananciaBruta)}</p>${metricas.serviciosSinCosto ? `<p class="text-xs text-amber-700 mt-1">${metricas.serviciosSinCosto} servicios sin costo registrado</p>` : ""}</div>
-          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Inversi&oacute;n acumulada</p><p class="mt-2 text-2xl font-bold">${formatCurrency(inversionAcumulada)}</p><p class="text-xs text-slate-500 mt-1">Estimado hist&oacute;rico a costo actual</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Inventario actual a costo</p><p class="mt-2 text-2xl font-bold">${formatCurrency(valorInventario)}</p><p class="text-xs text-slate-500 mt-1">Existencias disponibles hoy</p></div>
         </div>
+        ${renderInvestmentSummary(st)}
         <div class="view-card"><h3 class="text-lg font-bold mb-3">⚠️ Alertas de stock</h3><div class="space-y-2">${alertCards || '<p class="text-sm text-slate-500 text-center py-4">Sin alertas</p>'}</div></div>
       `;
     }
@@ -999,7 +1104,9 @@
           image = "images/shampoo_cebolla.jpg";
         }
 
-        if (!name || !category || !brand || Number.isNaN(priceBuy) || Number.isNaN(priceSell) || (wholesalePrice !== null && (!Number.isFinite(wholesalePrice) || wholesalePrice <= 0))) {
+        if (!name || !category || !brand || !Number.isFinite(priceBuy) || priceBuy < 0 ||
+            !Number.isFinite(priceSell) || priceSell < 0 || !Number.isInteger(stock) || stock < 0 ||
+            (wholesalePrice !== null && (!Number.isFinite(wholesalePrice) || wholesalePrice <= 0))) {
           showToast("Completa los campos obligatorios", "warning");
           return;
         }
@@ -1011,8 +1118,12 @@
           return;
         }
 
+        if (appState.savingProduct) return;
+        const previousProduct = product ? { ...product } : null;
+        const previousMovements = [...(db.investmentMovements || [])];
+        let savedProduct = product;
         if (isNew) {
-          db.products.push({
+          savedProduct = {
             id: uid("prod"),
             nombre: name,
             categoria: category,
@@ -1027,9 +1138,8 @@
             stockActual: stock,
             stockMinimo,
             fechaIngreso: today
-          });
-          showToast("Producto creado", "success");
-          saveDB();
+          };
+          db.products.push(savedProduct);
         } else {
           product.nombre = name;
           product.categoria = category;
@@ -1042,9 +1152,18 @@
           product.precioVentaMayorista = wholesalePrice;
           product.stockActual = stock;
           product.stockMinimo = stockMinimo;
-          showToast("Producto actualizado", "success");
-          saveDB();
         }
+        registrarEntradaInversion(savedProduct, previousProduct?.stockActual || 0);
+        appState.savingProduct = true;
+        const saved = await saveDB();
+        appState.savingProduct = false;
+        if (!saved) {
+          if (previousProduct) Object.assign(product, previousProduct);
+          else db.products = db.products.filter(entry => entry.id !== savedProduct.id);
+          db.investmentMovements = previousMovements;
+          return;
+        }
+        showToast(isNew ? "Producto creado" : "Producto actualizado", "success");
 
         document.getElementById("modalBackdrop").classList.remove("active");
         renderView();
@@ -2320,7 +2439,7 @@
         items: appState.cart.map(c => {
           if (c.tipo === "servicio" || c.tipo === "cartera_antigua") return { ...c };
           const product = db.products.find(entry => entry.id === c.productId);
-          return { productId: c.productId, cantidad: c.cantidad, precio: c.precio, descuentoTipo: c.descuentoTipo === "porcentaje" ? "porcentaje" : "fijo", descuentoValor: Number(c.descuentoValor) || 0, stockDescontado: Boolean(product && product.stockActual > 0) };
+          return { productId: c.productId, cantidad: c.cantidad, precio: c.precio, costoCompra: Number(product.precioCompra), descuentoTipo: c.descuentoTipo === "porcentaje" ? "porcentaje" : "fijo", descuentoValor: Number(c.descuentoValor) || 0, stockDescontado: Boolean(product && product.stockActual > 0) };
         }),
         subtotal,
         iva,

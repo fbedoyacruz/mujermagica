@@ -2,6 +2,14 @@
 -- Ejecutar sobre la base de datos `mujermagicabd` (ya creada en MySQL Workbench)
 USE mujermagicabd;
 
+CREATE TABLE IF NOT EXISTS investment_movements (
+  id VARCHAR(50) PRIMARY KEY,
+  fecha DATETIME(3) NOT NULL,
+  tipo VARCHAR(20) NOT NULL,
+  monto DECIMAL(12,2) NOT NULL,
+  product_id VARCHAR(50) NULL
+) ENGINE=InnoDB;
+
 CREATE TABLE IF NOT EXISTS providers (
   id VARCHAR(50) PRIMARY KEY,
   nombre VARCHAR(150) NOT NULL,
@@ -87,6 +95,7 @@ CREATE TABLE IF NOT EXISTS sale_items (
   cantidad INT NOT NULL,
   precio DECIMAL(12,2) NOT NULL,
   stock_descontado BOOLEAN NOT NULL DEFAULT TRUE,
+  costo_compra DECIMAL(12,2) NULL,
   descuento_tipo VARCHAR(20) NOT NULL DEFAULT 'fijo',
   descuento_valor DECIMAL(12,2) NOT NULL DEFAULT 0,
   FOREIGN KEY (sale_id) REFERENCES sales(id) ON DELETE CASCADE
