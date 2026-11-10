@@ -45,6 +45,10 @@ Al iniciar:
 
 Cada cambio (crear/editar producto, proveedor, cliente, confirmar venta, etc.) se sincroniza contra `PUT /api/state`, por lo que puedes verificar los datos directamente en MySQL Workbench sobre el esquema `mujermagicabd`.
 
+El dashboard muestra todos los productos cuyo stock actual es menor que el
+stock minimo, sin limitar la lista de alertas a seis productos. El indicador
+**Stock bajo** corresponde al total de esa misma lista.
+
 ## Autorizacion para eliminar ventas
 
 - Configura `SALE_DELETE_AUTH_CODE` en el archivo `.env` del backend y reinicia
@@ -89,6 +93,8 @@ anteriores: Alisado, Terapia capilar, Hidratacion, Henna y Lifting de pestanas.
 
 ## Comprobantes de abonos a creditos por factura
 
+- La ventana de factura conserva **Comisiones de abonos** para consulta interna;
+   ese renglon y su valor no se incluyen en el recibo para imprimir al cliente.
 - En **Cartera > Creditos por factura > Registrar abono**, al guardar se abre
    un comprobante independiente con la deuda antes del pago, el valor abonado
    y el saldo pendiente. Incluye cliente, fecha, metodo y factura de origen.

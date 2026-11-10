@@ -532,13 +532,13 @@
     function renderDashboard(st, search = "") {
       calcularAlertas();
       const conAlerta = st.products.filter(p => p.stockActual < p.stockMinimo);
-      const stockBajo = st.products.filter(p => p.stockActual < p.stockMinimo).length;
+      const stockBajo = conAlerta.length;
       const stockCritico = st.products.filter(p => p.stockActual === 0).length;
       const valorInventario = st.products.reduce((s, p) => s + (p.stockActual * p.precioCompra), 0);
       const inversionAcumulada = valorInventario + calcularMetricasGenerales(st.sales).totalCostoProductos;
       const metricas = calcularMetricasGenerales(filterSalesByPeriod(st.sales, appState.periodo));
 
-      const alertCards = conAlerta.slice(0, 6).map(p => {
+      const alertCards = conAlerta.map(p => {
         const estado = getEstadoStock(p);
         return `
           <div class="status-card ${estado.clase}">
@@ -2440,7 +2440,7 @@
           <div class="receipt-detail"><span>Subtotal</span><span class="receipt-amount">${formatCurrency(sale.subtotal)}</span></div>
           ${descuentoTotal > 0 ? `<div class="receipt-detail"><span>Descuento</span><span class="receipt-amount">-${formatCurrency(descuentoTotal)}</span></div>` : ""}
           ${sale.comisionPorcentaje == null || sale.metodoPago === "QR" ? "" : `<div class="receipt-detail"><span>Comisión (${Number(sale.comisionPorcentaje)}%)</span><span class="receipt-amount">${formatCurrency(sale.comisionValor)}</span></div>`}
-          ${saleCredit ? `<div class="receipt-detail"><span>Abonos aplicados al crédito</span><span class="receipt-amount">-${formatCurrency(creditPaymentsTotal)}</span></div>${creditPaymentsCommission > 0 ? `<div class="receipt-detail"><span>Comisiones de abonos</span><span class="receipt-amount">${formatCurrency(creditPaymentsCommission)}</span></div>` : ""}<div class="receipt-detail"><span>Total cobrado en abonos</span><span class="receipt-amount">${formatCurrency(creditPaymentsCharged)}</span></div><div class="receipt-detail"><strong>Saldo pendiente</strong><strong class="receipt-amount">${formatCurrency(creditBalance)}</strong></div>` : ""}
+          ${saleCredit ? `<div class="receipt-detail"><span>Abonos aplicados al crédito</span><span class="receipt-amount">-${formatCurrency(creditPaymentsTotal)}</span></div><div class="receipt-detail"><span>Total cobrado en abonos</span><span class="receipt-amount">${formatCurrency(creditPaymentsCharged)}</span></div><div class="receipt-detail"><strong>Saldo pendiente</strong><strong class="receipt-amount">${formatCurrency(creditBalance)}</strong></div>` : ""}
           <div class="receipt-separator"></div>
           <div class="receipt-detail receipt-total"><span>TOTAL</span><span class="receipt-amount">${formatCurrency(sale.total)}</span></div>
           <div class="receipt-separator"></div>

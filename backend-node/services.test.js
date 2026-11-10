@@ -701,13 +701,15 @@ test("venta a crédito registra abono inicial en la misma factura y calcula el s
   assert.equal(app.getCreditBalance(state.customerCredits[0]), 28000);
 
   app.verFactura(state.sales[0].id);
+  assert.match(elements.invoiceMarkup, /Comisiones de abonos/);
+  assert.ok(elements.invoiceMarkup.includes(vm.runInContext("formatCurrency(360)", app)));
+  assert.doesNotMatch(elements.thermalPrintRoot.innerHTML, /Comisiones de abonos/);
+  assert.ok(!elements.thermalPrintRoot.innerHTML.includes(vm.runInContext("formatCurrency(360)", app)));
   for (const markup of [elements.invoiceMarkup, elements.thermalPrintRoot.innerHTML]) {
     assert.ok(markup.includes("Abonos aplicados al crédito"));
     assert.ok(markup.includes("Saldo pendiente"));
-    assert.ok(markup.includes("Comisiones de abonos"));
     assert.doesNotMatch(markup, /Retenciones de abonos|Neto recibido por abonos|IVA/);
     assert.ok(markup.includes(vm.runInContext("formatCurrency(12000)", app)));
-    assert.ok(markup.includes(vm.runInContext("formatCurrency(360)", app)));
     assert.ok(markup.includes(vm.runInContext("formatCurrency(12360)", app)));
     assert.ok(markup.includes(vm.runInContext("formatCurrency(28000)", app)));
   }
@@ -1364,6 +1366,29 @@ test("lectura conserva el nombre historico aunque cambie el catalogo", async () 
   assert.equal(state.customerPayments[0].netoRecibido, 150200);
   assert.equal(state.customerPayments[0].saldoAnterior, 500000);
   assert.equal(state.customerPayments[0].saldoPosterior, 350000);
+});
+
+test("dashboard muestra todos los productos con stock bajo sin limitar la lista a seis", () => {
+  const state = fixture();
+  state.products = Array.from({ length: 51 }, (_, index) => ({
+    ...fixture().products[0], id: `low_${index}`, nombre: `Alerta producto ${index}`, stockActual: index % 2, stockMinimo: 2
+  }));
+  state.products.push({ ...fixture().products[0], nombre: "Producto con stock suficiente", stockActual: 2, stockMinimo: 2 });
+  const app = frontend(state);
+  vm.runInContext("calcularAlertas = () => {};", app);
+
+  const dashboard = app.renderDashboard(state);
+  assert.equal((dashboard.match(/class="status-card /g) || []).length, 51);
+  assert.match(dashboard, /text-amber-700">51<\/p>/);
+  for (const product of state.products.slice(0, 51)) {
+    assert.ok(dashboard.includes(`<p class="font-semibold text-sm">${product.nombre}</p>`));
+  }
+  assert.doesNotMatch(dashboard, /Producto con stock suficiente/);
+
+  state.products.push({ ...state.products[0], id: "extra", nombre: "Alerta adicional" });
+  assert.equal((app.renderDashboard(state).match(/class="status-card /g) || []).length, 52);
+  state.products = [];
+  assert.match(app.renderDashboard(state), /Sin alertas/);
 });
 
 test("servicios se filtran por mes sin entrar en inversion ni stock bajo", () => {
