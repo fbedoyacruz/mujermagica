@@ -227,6 +227,7 @@ test("ventas mixtas separan ingresos y omiten ganancias de servicios sin costo",
   assert.equal(metrics.ingresosProductos, 20000);
   assert.equal(metrics.ingresosServicios, 230000);
   assert.equal(metrics.totalCostoProductos, 10000);
+  assert.equal(metrics.gananciaProductos, 10000);
   assert.equal(metrics.gananciaBruta, 160000);
   assert.equal(metrics.serviciosSinCosto, 1);
   assert.equal(metrics.margenPromedio, 80);
@@ -1646,7 +1647,10 @@ test("dashboard separa ventas de productos y servicios sin mostrar el aviso de c
   assert.match(dashboard, /Total vendido en servicios/);
   assert.ok(dashboard.includes(vm.runInContext("formatCurrency(20000)", app)));
   assert.ok(dashboard.includes(vm.runInContext("formatCurrency(230000)", app)));
-  assert.ok(dashboard.includes(vm.runInContext("formatCurrency(160000)", app)));
+  const profitCard = dashboard.match(/<div class="kpi-card"><p class="text-xs uppercase text-slate-500">Ganancia de productos<\/p><p class="mt-2 text-2xl font-bold metric-up">.*?<\/p><\/div>/)?.[0];
+  assert.ok(profitCard);
+  assert.ok(profitCard.includes(vm.runInContext("formatCurrency(10000)", app)));
+  assert.ok(!profitCard.includes(vm.runInContext("formatCurrency(160000)", app)));
   assert.doesNotMatch(dashboard, /servicios sin costo registrado/);
 });
 

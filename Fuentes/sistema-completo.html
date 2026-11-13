@@ -488,6 +488,7 @@
       const ingresosProductos = productos.reduce((sum, item) => sum + getItemNetTotal(item), 0);
       const ingresosServicios = servicios.reduce((sum, item) => sum + item.cantidad * item.precio, 0);
       const totalCostoProductos = productos.reduce((sum, item) => sum + item.cantidad * (db.products.find(product => product.id === item.productId)?.precioCompra ?? 0), 0);
+      const gananciaProductos = ingresosProductos - totalCostoProductos;
       const totalCosto = totalCostoProductos + servicios.reduce((sum, item) => sum + item.cantidad * (item.costo ?? 0), 0);
       const serviciosSinCosto = servicios.filter(item => item.costo == null).reduce((sum, item) => sum + item.cantidad, 0);
       const ingresosSinCosto = servicios.filter(item => item.costo == null).reduce((sum, item) => sum + item.cantidad * item.precio, 0);
@@ -496,7 +497,7 @@
       const margenPromedio = ingresosConCosto > 0 ? (gananciaBruta / ingresosConCosto) * 100 : 0;
       const cantVentas = sales.length;
       const ventaPromedio = cantVentas > 0 ? totalVentas / cantVentas : 0;
-      return { totalVentas, totalCosto, totalCostoProductos, ingresosProductos, ingresosServicios, ingresosCarteraAntigua, serviciosSinCosto, gananciaBruta, margenPromedio, cantVentas, ventaPromedio };
+      return { totalVentas, totalCosto, totalCostoProductos, ingresosProductos, ingresosServicios, ingresosCarteraAntigua, serviciosSinCosto, gananciaProductos, gananciaBruta, margenPromedio, cantVentas, ventaPromedio };
     }
 
     function productosMasVendidos(sales, limite = 5) {
@@ -662,7 +663,7 @@
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido en productos</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.ingresosProductos)}</p></div>
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido en servicios</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.ingresosServicios)}</p></div>
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Stock bajo</p><p class="mt-2 text-2xl font-bold text-amber-700">${stockBajo}</p><p class="text-xs text-slate-500 mt-1">Actual</p></div>
-          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">${metricas.serviciosSinCosto ? "Ganancia conocida" : "Ganancia"}</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(metricas.gananciaBruta)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Ganancia de productos</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(metricas.gananciaProductos)}</p></div>
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Inventario actual a costo</p><p class="mt-2 text-2xl font-bold">${formatCurrency(valorInventario)}</p><p class="text-xs text-slate-500 mt-1">Existencias disponibles hoy</p></div>
         </div>
         ${renderInvestmentSummary(st)}
