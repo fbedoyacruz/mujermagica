@@ -250,6 +250,26 @@ test("cobro mixto guarda el precio acordado y solo descuenta productos", async (
   assert.equal(vm.runInContext("appState.cart.length", app), 0);
 });
 
+test("venta sin cliente asigna el cliente Default a la factura", async () => {
+  const state = fixture();
+  const elements = {
+    clienteSelect: { value: "" }, metodoSelect: { value: "Efectivo" },
+    modalContent: { innerHTML: "", appendChild: element => { elements.invoiceMarkup = element.innerHTML; } },
+    modalBackdrop: { classList: { add: () => {} } }, thermalPrintRoot: { innerHTML: "" }
+  };
+  const app = frontend(state, elements);
+  app.document.createElement = () => ({ className: "", innerHTML: "" });
+  app.cartFixture = [{ productId: "product_1", cantidad: 1, precio: 20000 }];
+  vm.runInContext("appState.cart = cartFixture; saveDB = async () => true;", app);
+
+  await app.confirmarVenta();
+
+  assert.equal(state.sales[0].clienteId, "22222222");
+  app.verFactura(state.sales[0].id);
+  assert.match(elements.invoiceMarkup, /CLIENTE: Default/);
+  assert.match(elements.thermalPrintRoot.innerHTML, /Default/);
+});
+
 test("POS usa tarifas por modalidad y separa el mismo producto por precio", () => {
   const state = fixture();
   const app = frontend(state);
@@ -1610,6 +1630,24 @@ test("dashboard muestra todos los productos con stock bajo sin limitar la lista 
   assert.equal((app.renderDashboard(state).match(/class="status-card /g) || []).length, 52);
   state.products = [];
   assert.match(app.renderDashboard(state), /Sin alertas/);
+});
+
+test("dashboard separa ventas de productos y servicios sin mostrar el aviso de costo faltante", () => {
+  const state = fixture();
+  state.sales = [{ fecha: "2026-10-15T12:00:00Z", total: 250000, items: [
+    { productId: "product_1", cantidad: 1, precio: 20000 }, serviceItem,
+    { ...serviceItem, serviceId: "service_2", nombre: "Henna", precio: 50000, costo: null }
+  ] }];
+  const app = frontend(state);
+  vm.runInContext("appState.periodo = 'todo'; calcularAlertas = () => {};", app);
+
+  const dashboard = app.renderDashboard(state);
+  assert.match(dashboard, /Total vendido en productos/);
+  assert.match(dashboard, /Total vendido en servicios/);
+  assert.ok(dashboard.includes(vm.runInContext("formatCurrency(20000)", app)));
+  assert.ok(dashboard.includes(vm.runInContext("formatCurrency(230000)", app)));
+  assert.ok(dashboard.includes(vm.runInContext("formatCurrency(160000)", app)));
+  assert.doesNotMatch(dashboard, /servicios sin costo registrado/);
 });
 
 test("servicios se filtran por mes sin entrar en inversion ni stock bajo", () => {

@@ -123,6 +123,7 @@
     // ==================== UTILIDADES ====================
     const formatCurrency = (v) => new Intl.NumberFormat("es-CO", { style: "currency", currency: "COP", maximumFractionDigits: 0 }).format(v || 0);
     const formatDate = (d) => { const date = new Date(d); return Number.isNaN(date.getTime()) ? "--" : new Intl.DateTimeFormat("es-CO", { year: "numeric", month: "short", day: "2-digit" }).format(date); };
+    const DEFAULT_CUSTOMER_ID = "22222222";
     const paymentMethods = [
       { value: "Efectivo", label: "Efectivo" },
       { value: "Tarjeta", label: "Tarjeta crédito" },
@@ -657,10 +658,11 @@
 
       return `
         ${renderPeriodSelector(st)}
-        <div class="grid grid-cols-1 gap-4 md:grid-cols-4">
-          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.totalVentas)}</p></div>
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido en productos</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.ingresosProductos)}</p></div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Total vendido en servicios</p><p class="mt-2 text-2xl font-bold">${formatCurrency(metricas.ingresosServicios)}</p></div>
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Stock bajo</p><p class="mt-2 text-2xl font-bold text-amber-700">${stockBajo}</p><p class="text-xs text-slate-500 mt-1">Actual</p></div>
-          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">${metricas.serviciosSinCosto ? "Ganancia conocida" : "Ganancia"}</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(metricas.gananciaBruta)}</p>${metricas.serviciosSinCosto ? `<p class="text-xs text-amber-700 mt-1">${metricas.serviciosSinCosto} servicios sin costo registrado</p>` : ""}</div>
+          <div class="kpi-card"><p class="text-xs uppercase text-slate-500">${metricas.serviciosSinCosto ? "Ganancia conocida" : "Ganancia"}</p><p class="mt-2 text-2xl font-bold metric-up">${formatCurrency(metricas.gananciaBruta)}</p></div>
           <div class="kpi-card"><p class="text-xs uppercase text-slate-500">Inventario actual a costo</p><p class="mt-2 text-2xl font-bold">${formatCurrency(valorInventario)}</p><p class="text-xs text-slate-500 mt-1">Existencias disponibles hoy</p></div>
         </div>
         ${renderInvestmentSummary(st)}
@@ -1180,7 +1182,7 @@
       const services = [...servicesByName.values()].filter(service => service.nombre.toLowerCase().includes(search.toLowerCase()));
       const rows = services.map(service => `<tr class="border-b text-sm"><td class="px-3 py-2 font-semibold">${escapeHtml(service.nombre)}</td><td class="px-3 py-2 text-right">${service.precioSugerido == null ? "Variable" : formatCurrency(service.precioSugerido)}</td><td class="px-3 py-2 text-right">${service.costoSugerido == null ? "Sin registrar" : formatCurrency(service.costoSugerido)}</td><td class="px-3 py-2">${service.activo !== false ? "Activo" : "Inactivo"}</td><td class="px-3 py-2"><button type="button" data-id="${escapeHtml(service.id)}" onclick="showEditServiceModal(this.dataset.id)" class="font-semibold text-slate-700">Editar</button></td></tr>`).join("");
       const historyRows = st.sales.flatMap(sale => sale.items.filter(item => item.tipo === "servicio").map(item => {
-        const customer = sale.clienteId ? st.customers.find(entry => entry.id === sale.clienteId) : null;
+        const customer = getSaleCustomer(sale, st.customers);
         return { sale, item, customer };
       })).filter(({ sale, item, customer }) => !search || `${sale.id} ${customer?.nombre || "Consumidor"} ${item.nombre} ${item.observaciones || ""} ${sale.metodoPago || ""}`.toLowerCase().includes(search.toLowerCase())).sort((left, right) => new Date(right.sale.fecha) - new Date(left.sale.fecha));
       const historyTableRows = historyRows.map(({ sale, item, customer }) => `<tr class="border-b text-sm"><td class="px-3 py-2 whitespace-nowrap">${formatDate(sale.fecha)}</td><td class="px-3 py-2"><button type="button" data-sale-id="${escapeHtml(sale.id)}" onclick="verFactura(this.dataset.saleId)" class="font-semibold text-teal-700">${escapeHtml(sale.id)}</button></td><td class="px-3 py-2">${escapeHtml(customer?.nombre || "Consumidor")}</td><td class="px-3 py-2 font-semibold">${escapeHtml(item.nombre)}</td><td class="px-3 py-2 text-right">${item.cantidad}</td><td class="px-3 py-2 text-right">${formatCurrency(item.precio * item.cantidad)}</td><td class="px-3 py-2">${escapeHtml(item.observaciones || "-")}</td><td class="px-3 py-2">${escapeHtml(sale.metodoPago || "-")}</td></tr>`).join("");
@@ -2384,14 +2386,15 @@
     async function confirmarVenta() {
       if (!appState.cart.length || appState.savingSale) return;
       if (!validateCartProductStock()) return;
-      const clienteId = document.getElementById("clienteSelect").value || null;
+      const selectedClienteId = document.getElementById("clienteSelect").value;
+      const clienteId = selectedClienteId || DEFAULT_CUSTOMER_ID;
       const metodo = document.getElementById("metodoSelect").value;
       const comisionInput = document.getElementById("commissionSelect")?.value || "";
       const abonoInicial = metodo === "Credito" ? Number(document.getElementById("creditInitialPaymentAmount")?.value || 0) : 0;
       const metodoAbonoInicial = document.getElementById("creditInitialPaymentMethod")?.value || "";
       const porcentajeAbonoInicial = Number(document.getElementById("creditInitialCommissionRate")?.value || 0);
       const requiereComision = commissionPaymentMethods.has(metodo);
-      if (metodo === "Credito" && !clienteId) {
+      if (metodo === "Credito" && !selectedClienteId) {
         showToast("Debe seleccionar un cliente para ventas a crédito.", "warning");
         return;
       }
@@ -2511,11 +2514,17 @@
       return `Saldo anterior: ${formatCurrency(item.saldoAnterior)}. Abono: ${formatCurrency(item.precio)}. Saldo restante: ${formatCurrency(item.saldoPosterior)}.`;
     }
 
+    function getSaleCustomer(sale, customers = db.customers) {
+      return sale.clienteId
+        ? customers.find(customer => customer.id === sale.clienteId) || (sale.clienteId === DEFAULT_CUSTOMER_ID ? { id: DEFAULT_CUSTOMER_ID, nombre: "Default" } : null)
+        : null;
+    }
+
     function verFactura(saleId) {
       const sale = db.sales.find(s => s.id === saleId);
       if (!sale) return;
 
-      const customer = sale.clienteId ? db.customers.find(c => c.id === sale.clienteId) : null;
+      const customer = getSaleCustomer(sale);
       const descuentoTotal = getSaleDiscountTotal(sale);
       const saleCredit = (db.customerCredits || []).find(credit => credit.saleId === saleId);
       const creditPayments = saleCredit ? (db.customerPayments || []).filter(payment => payment.creditId === saleCredit.id) : [];
